@@ -24,6 +24,8 @@ class PROCESSENTRY32(ctypes.Structure):
 
 TH32CS_SNAPMODULE = 0x00000002
 INVALID_HANDLE_VALUE = -1
+CP_ACP = 0
+
 
 # input value : https://msdn.microsoft.com/en-us/library/windows/desktop/bb530716(v=vs.85).aspx
 def set_privilege(szPrivilege):
@@ -90,7 +92,7 @@ def main():
     flag = windll.kernel32.Process32First(hSnapshot, ctypes.pointer(process_entry_32))
 
     while flag:
-        print(process_entry_32.th32ProcessID, process_entry_32.szExeFile)
+        print("name : %-25.25s pid : %-5.5d"% (process_entry_32.szExeFile.decode("utf8"), process_entry_32.th32ProcessID))
         flag = windll.kernel32.Process32Next(hSnapshot, ctypes.pointer(process_entry_32))
 
     if hSnapshot != INVALID_HANDLE_VALUE:
