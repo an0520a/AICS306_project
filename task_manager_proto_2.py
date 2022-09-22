@@ -1,14 +1,15 @@
-from multiprocessing import process
-from shutil import ExecError
 import sys
 import win32api
 import win32process
 import win32con
 import win32security
+import win32process
 import winnt
 import ctypes
 from ctypes import wintypes
 from ctypes import windll
+import elevate
+import os
 
 
 class PROCESSENTRY32(ctypes.Structure):
@@ -33,7 +34,7 @@ def set_privilege(szPrivilege):
 
     hToken = win32security.OpenProcessToken(
         win32api.GetCurrentProcess(),
-        win32con.TOKEN_ADJUST_PRIVILEGES | win32con.TOKEN_ADJUST_PRIVILEGES
+        win32con.TOKEN_ALL_ACCESS
     )
     # win32security.OpenProcessToken(HANDLE ProcessHandle, DWORD DesiredAccess)
         # Do it
@@ -81,31 +82,38 @@ def set_privilege(szPrivilege):
             # DisableAllPrivileges : 토큰의 모든 권한을 비활성화 할지 정함.
             #                        TRUE라면 모든 권한을 비활성화. FALSE라면 권한을 수정
             # NewState : 새로 설정활 권한
-    print(win32api.GetLastError())
-
     win32api.CloseHandle(hToken)
 
 def main():
+    elevate.elevate(show_console = True)
+    set_privilege(win32con.SE_DEBUG_NAME)
+
+
     hProcessSnapshot = windll.kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, None)
     process_entry_32 = PROCESSENTRY32()
     process_entry_32.dwSize = ctypes.sizeof(process_entry_32)
 
     flag = windll.kernel32.Process32First(hProcessSnapshot, ctypes.pointer(process_entry_32))
 
-    print("%-25.25s\t%-5s\t%5.5s" % ("name", "pid", "owner"))
+    print("%-25.25s\t%-5s\t%-15.15s\t%-10.10s\t%12.12s" % ("name", "pid", "owner", "cpu_usage", "memory_usage"))
     while flag:
         process_name = process_entry_32.szExeFile.decode("utf8")
         process_pid = process_entry_32.th32ProcessID
         process_owner = ""
         process_owner_domain = ""
+        process_owner_type = 0
+        process_time_info_dict = {}
+        process_memory_info_dict = {}
+        process_memory_usage = 0 # 단위 : KB
+        
         try:
             hProc = win32api.OpenProcess(
-                win32con.MAXIMUM_ALLOWED, win32con.FALSE,
+                win32con.PROCESS_QUERY_LIMITED_INFORMATION, win32con.FALSE,
                 process_pid
             )
-            
+
             hToken = win32security.OpenProcessToken(
-                win32api.GetCurrentProcess(),
+                hProc,
                 win32con.TOKEN_QUERY
             )
 
@@ -113,16 +121,24 @@ def main():
             process_owner, process_owner_domain, process_owner_type = win32security.LookupAccountSid(
                 None, token_user
             )
-            
+
+            process_time_info_dict = win32process.GetProcessTimes(hProc)
+            process_memory_info_dict = win32process.GetProcessMemoryInfo(hProc)
+            process_memory_usage = process_memory_info_dict["WorkingSetSize"] / 1024
+
+            win32api.CloseHandle(hToken)
+            win32api.CloseHandle(hProc)
 
         except:
             process_owner = "Unknown"
 
-        print("%-25.25s\t%-5d\t%8.8s" % (process_name, process_pid, process_owner))
+        print("%-25.25s\t%-5d\t%- 15.15s\t%-10.10s\t%12.12s" % (process_name, process_pid, process_owner, "", (str(process_memory_usage) + " " + "K")))
         flag = windll.kernel32.Process32Next(hProcessSnapshot, ctypes.pointer(process_entry_32))
 
     if hProcessSnapshot != INVALID_HANDLE_VALUE:
         ctypes.windll.kernel32.CloseHandle(hProcessSnapshot)
+
+    os.system("pause")
 
 if __name__ == '__main__':
     main()
