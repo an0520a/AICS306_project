@@ -1,3 +1,4 @@
+from multiprocessing import process
 from shutil import ExecError
 import sys
 import win32api
@@ -72,7 +73,6 @@ def set_privilege(szPrivilege):
     '''
     
     win32security.AdjustTokenPrivileges(hToken, win32con.FALSE, new_token_privilege)
-    print(win32api.GetLastError())
     # AdjustTokenPrivileges(HANDLE TockenHandle, BOOL DisableAllPrivileges, TOKEN_PRIVILEGES NewState)
         # Do it
             # 토큰의 권한을 설정
@@ -81,22 +81,48 @@ def set_privilege(szPrivilege):
             # DisableAllPrivileges : 토큰의 모든 권한을 비활성화 할지 정함.
             #                        TRUE라면 모든 권한을 비활성화. FALSE라면 권한을 수정
             # NewState : 새로 설정활 권한
+    print(win32api.GetLastError())
 
     win32api.CloseHandle(hToken)
 
 def main():
-    hSnapshot = windll.kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, None)
+    hProcessSnapshot = windll.kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, None)
     process_entry_32 = PROCESSENTRY32()
     process_entry_32.dwSize = ctypes.sizeof(process_entry_32)
 
-    flag = windll.kernel32.Process32First(hSnapshot, ctypes.pointer(process_entry_32))
+    flag = windll.kernel32.Process32First(hProcessSnapshot, ctypes.pointer(process_entry_32))
 
+    print("%-25.25s\t%-5s\t%5.5s" % ("name", "pid", "owner"))
     while flag:
-        print("name : %-25.25s pid : %-5.5d"% (process_entry_32.szExeFile.decode("utf8"), process_entry_32.th32ProcessID))
-        flag = windll.kernel32.Process32Next(hSnapshot, ctypes.pointer(process_entry_32))
+        process_name = process_entry_32.szExeFile.decode("utf8")
+        process_pid = process_entry_32.th32ProcessID
+        process_owner = ""
+        process_owner_domain = ""
+        try:
+            hProc = win32api.OpenProcess(
+                win32con.MAXIMUM_ALLOWED, win32con.FALSE,
+                process_pid
+            )
+            
+            hToken = win32security.OpenProcessToken(
+                win32api.GetCurrentProcess(),
+                win32con.TOKEN_QUERY
+            )
 
-    if hSnapshot != INVALID_HANDLE_VALUE:
-        ctypes.windll.kernel32.CloseHandle(hSnapshot)
+            token_user = win32security.GetTokenInformation(hToken, win32security.TokenOwner)
+            process_owner, process_owner_domain, process_owner_type = win32security.LookupAccountSid(
+                None, token_user
+            )
+            
+
+        except:
+            process_owner = "Unknown"
+
+        print("%-25.25s\t%-5d\t%8.8s" % (process_name, process_pid, process_owner))
+        flag = windll.kernel32.Process32Next(hProcessSnapshot, ctypes.pointer(process_entry_32))
+
+    if hProcessSnapshot != INVALID_HANDLE_VALUE:
+        ctypes.windll.kernel32.CloseHandle(hProcessSnapshot)
 
 if __name__ == '__main__':
     main()
