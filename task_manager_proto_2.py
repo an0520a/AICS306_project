@@ -4,13 +4,45 @@ import win32process
 import win32con
 import win32security
 import win32process
+import win32gui
 import winnt
+import pywintypes
 import ctypes
 from ctypes import wintypes
 from ctypes import windll
 import elevate
 import os
+from dataclasses import dataclass
+from dataclasses import field
 
+@dataclass
+class ProcessInfo:
+    process_name : str = None
+    process_pid : int = None
+    process_owner : str = None
+    process_owner_domain : str = None
+    process_owner_type : int = None
+    process_time_info_dict : dict = field(default_factory=dict)
+    process_memory_info_dict : dict = field(default_factory=dict)
+    process_memory_usage : int = None # 단위 : KB
+    process_cpu_usgae : float = None
+
+def kill_process(process_pid):
+    hProc = win32api.OpenProcess(
+                win32con.PROCESS_TERMINATE, win32con.FALSE,
+                process_pid
+            )
+    win32api.TerminateProcess(hProc, 1)
+    win32api.CloseHandle(hProc)
+
+def EnumWindowProc(hWnd, lParam):		
+    if win32gui.GetParent(hWnd) == None:		
+        pid = 0;		
+        pid = win32process.GetWindowThreadProcessId(hWnd)		
+        if pid == lParam:			
+            win32gui.PostMessage(hWnd, win32con.WM_CLOSE, 0, 0)
+        return False
+    return True
 
 class PROCESSENTRY32(ctypes.Structure):
     _fields_ = [ ( "dwSize" , wintypes.DWORD) ,
@@ -93,28 +125,22 @@ def main():
     elevate.elevate(show_console = True)
     set_privilege(win32con.SE_DEBUG_NAME)
 
-
+    process_info_list = []
     hProcessSnapshot = windll.kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, None)
     process_entry_32 = PROCESSENTRY32()
     process_entry_32.dwSize = ctypes.sizeof(process_entry_32)
 
     flag = windll.kernel32.Process32First(hProcessSnapshot, ctypes.pointer(process_entry_32))
 
-    print("%-25.25s\t%-5s\t%-15.15s\t%-10.10s\t%12.12s" % ("name", "pid", "owner", "cpu_usage", "memory_usage"))
     while flag:
-        process_name = process_entry_32.szExeFile.decode("utf8")
-        process_pid = process_entry_32.th32ProcessID
-        process_owner = ""
-        process_owner_domain = ""
-        process_owner_type = 0
-        process_time_info_dict = {}
-        process_memory_info_dict = {}
-        process_memory_usage = 0 # 단위 : KB
+        process_info = ProcessInfo()
+        process_info.process_name = process_entry_32.szExeFile.decode("utf8")
+        process_info.process_pid = process_entry_32.th32ProcessID
         
         try:
             hProc = win32api.OpenProcess(
                 win32con.PROCESS_QUERY_LIMITED_INFORMATION, win32con.FALSE,
-                process_pid
+                process_info.process_pid
             )
 
             hToken = win32security.OpenProcessToken(
@@ -123,25 +149,30 @@ def main():
             )
 
             token_user = win32security.GetTokenInformation(hToken, win32security.TokenOwner)
-            process_owner, process_owner_domain, process_owner_type = win32security.LookupAccountSid(
+            process_info.process_owner, process_info.process_owner_domain, process_info.process_owner_type = \
+                win32security.LookupAccountSid(
                 None, token_user
             )
 
-            process_time_info_dict = win32process.GetProcessTimes(hProc)
-            process_memory_info_dict = win32process.GetProcessMemoryInfo(hProc)
-            process_memory_usage = process_memory_info_dict["WorkingSetSize"] / 1024
+            process_info.process_time_info_dict = win32process.GetProcessTimes(hProc)
+            process_info.process_memory_info_dict = win32process.GetProcessMemoryInfo(hProc)
+            process_info.process_memory_usage = process_info.process_memory_info_dict["WorkingSetSize"] / 1024
 
             win32api.CloseHandle(hToken)
             win32api.CloseHandle(hProc)
 
         except:
-            process_owner = "Unknown"
+            process_info.process_owner = "Unknown"
 
-        print("%-25.25s\t%-5d\t%- 15.15s\t%-10.10s\t%12.12s" % (process_name, process_pid, process_owner, "", (str(process_memory_usage) + " " + "K")))
+        process_info_list.append(process_info)
         flag = windll.kernel32.Process32Next(hProcessSnapshot, ctypes.pointer(process_entry_32))
 
     if hProcessSnapshot != INVALID_HANDLE_VALUE:
         ctypes.windll.kernel32.CloseHandle(hProcessSnapshot)
+
+    print("%-25.25s\t%-5s\t%-15.15s\t%-10.10s\t%12.12s" % ("name", "pid", "owner", "cpu_usage", "memory_usage"))
+    for process_info in process_info_list:
+        print("%-25.25s\t%-5d\t%- 15.15s\t%-10.10s\t%12.12s" % (process_info.process_name, process_info.process_pid, process_info.process_owner, "", (str(process_info.process_memory_usage) + " " + "K")))
 
     os.system("pause")
 
