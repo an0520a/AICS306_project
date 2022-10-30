@@ -1,3 +1,4 @@
+from concurrent.futures import process
 import sys
 import win32api
 import win32process
@@ -12,11 +13,26 @@ from ctypes import wintypes
 from ctypes import windll
 import elevate
 import os
+import time
+import schedule
+import datetime
 from dataclasses import dataclass
 from dataclasses import field
 
-@dataclass
+@dataclass(order = True)
 class ProcessInfo:
+    process_pid : int = None
+    process_name : str = None
+    process_owner : str = None
+    process_owner_domain : str = None
+    process_owner_type : int = None
+    process_time_info_dict : dict = field(default_factory=dict)
+    process_memory_info_dict : dict = field(default_factory=dict)
+    process_memory_usage : int = None # 단위 : KB
+    process_cpu_usgae : float = None
+
+@dataclass
+class ProcessInfoWithUsage:
     process_name : str = None
     process_pid : int = None
     process_owner : str = None
@@ -121,10 +137,8 @@ def set_privilege(szPrivilege):
             # NewState : 새로 설정활 권한
     win32api.CloseHandle(hToken)
 
-def main():
-    elevate.elevate(show_console = True)
-    set_privilege(win32con.SE_DEBUG_NAME)
-
+# 현재 프로세스의 리스트와 정보를 ProcessInfo dataclass의 리스트로 반환 
+def get_process_info_list():
     process_info_list = []
     hProcessSnapshot = windll.kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, None)
     process_entry_32 = PROCESSENTRY32()
@@ -156,7 +170,7 @@ def main():
 
             process_info.process_time_info_dict = win32process.GetProcessTimes(hProc)
             process_info.process_memory_info_dict = win32process.GetProcessMemoryInfo(hProc)
-            process_info.process_memory_usage = process_info.process_memory_info_dict["WorkingSetSize"] / 1024
+            process_info.process_memory_usage = process_info.process_memory_info_dict["WorkingSetSize"] / 1024.0
 
             win32api.CloseHandle(hToken)
             win32api.CloseHandle(hProc)
@@ -170,9 +184,38 @@ def main():
     if hProcessSnapshot != INVALID_HANDLE_VALUE:
         ctypes.windll.kernel32.CloseHandle(hProcessSnapshot)
 
-    print("%-25.25s\t%-5s\t%-15.15s\t%-10.10s\t%12.12s" % ("name", "pid", "owner", "cpu_usage", "memory_usage"))
-    for process_info in process_info_list:
-        print("%-25.25s\t%-5d\t%- 15.15s\t%-10.10s\t%12.12s" % (process_info.process_name, process_info.process_pid, process_info.process_owner, "", (str(process_info.process_memory_usage) + " " + "K")))
+    return process_info_list
+
+def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], process_info_list : list[ProcessInfo]):
+    process_info_with_usage_list = []
+
+    process_info_list.sort()
+    prev_process_info_list.sort()
+
+    for 
+
+    return None
+
+
+def main():
+    # elevate.elevate(show_console = True)
+    set_privilege(win32con.SE_DEBUG_NAME)
+    process_manager_update_time = 1
+
+    prev_process_info_list = get_process_info_list()
+    time.sleep(process_manager_update_time)
+
+    while True:
+
+        process_info_list = get_process_info_list()
+
+        print("%-25.25s\t%-5s\t%-15.15s\t%-10.10s\t%12.12s" % ("name", "pid", "owner", "cpu_usage", "memory_usage"))
+        for process_info in process_info_list:
+            print("%-25.25s\t%-5d\t%- 15.15s\t%-10.10s\t%12.12s" % (process_info.process_name, process_info.process_pid, process_info.process_owner, "", (str(process_info.process_memory_usage) + " " + "K")))
+
+        prev_process_info_list = process_info_list
+
+        time.sleep(process_manager_update_time)
 
     os.system("pause")
 
