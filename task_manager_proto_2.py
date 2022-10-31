@@ -325,7 +325,11 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
 
     process_info_list_len = len(process_info_list)
     prev_process_info_list_len = len(prev_process_info_list)
-    
+
+    print(process_info_list_len)
+    print(prev_process_info_list_len)
+    print(len(preprocessed_process_info_list))
+
     while i < process_info_list_len and j < prev_process_info_list_len:
         preprocessed_process_info = PreprocessedProcessInfo()
 
@@ -368,8 +372,8 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
                     preprocessed_process_info_list.append(preprocessed_process_info)
 
             else:
-                if process_info_list[i].process_pid < process_info_list[j].process_pid:  # 새로운 프로세스가 생긴 케이스
-                    while process_info_list[i].process_pid < process_info_list[j].process_pid:
+                if process_info_list[i].process_pid < prev_process_info_list[j].process_pid:  # 새로운 프로세스가 생긴 케이스
+                    while process_info_list[i].process_pid < prev_process_info_list[j].process_pid:
                         preprocessed_process_info.process_name = process_info_list[i].process_name
                         preprocessed_process_info.process_pid = process_info_list[i].process_pid
                         preprocessed_process_info.process_memory_info_dict = process_info_list[i].process_memory_info_dict
@@ -389,8 +393,8 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
 
                     continue
 
-                if process_info_list[i].process_pid > process_info_list[j].process_pid:
-                    while process_info_list[i].process_pid > process_info_list[j].process_pid: # 있던 프로세스가 죽은 케이스
+                if process_info_list[i].process_pid > prev_process_info_list[j].process_pid:
+                    while process_info_list[i].process_pid > prev_process_info_list[j].process_pid: # 있던 프로세스가 죽은 케이스
                         j += 1
 
                     continue
@@ -403,8 +407,8 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
                 preprocessed_process_info_list.append(preprocessed_process_info)
 
             else:
-                if process_info_list[i].process_pid < process_info_list[j].process_pid:  # 새로운 프로세스가 생긴 케이스
-                    while process_info_list[i].process_pid < process_info_list[j].process_pid:
+                if process_info_list[i].process_pid < prev_process_info_list[j].process_pid:  # 새로운 프로세스가 생긴 케이스
+                    while process_info_list[i].process_pid < prev_process_info_list[j].process_pid:
                         preprocessed_process_info.process_name = process_info_list[i].process_name
                         preprocessed_process_info.process_pid = process_info_list[i].process_pid
 
@@ -414,14 +418,36 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
 
                     continue
 
-                if process_info_list[i].process_pid > process_info_list[j].process_pid:
-                    while process_info_list[i].process_pid > process_info_list[j].process_pid: # 있던 프로세스가 죽은 케이스
+                if process_info_list[i].process_pid > prev_process_info_list[j].process_pid:
+                    while process_info_list[i].process_pid > prev_process_info_list[j].process_pid: # 있던 프로세스가 죽은 케이스
                         j += 1
 
                     continue
 
         i += 1
         j += 1
+
+    for k in range(i, process_info_list_len):
+        preprocessed_process_info = PreprocessedProcessInfo()
+
+        if process_info_list[k].token_flag:
+            preprocessed_process_info.process_name = process_info_list[k].process_name
+            preprocessed_process_info.process_pid = process_info_list[k].process_pid
+            preprocessed_process_info.process_memory_info_dict = process_info_list[k].process_memory_info_dict
+            preprocessed_process_info.process_time_info_dict = process_info_list[k].process_time_info_dict
+            preprocessed_process_info.process_owner = process_info_list[k].process_owner
+            preprocessed_process_info.process_owner_domain = process_info_list[k].process_owner_domain
+            preprocessed_process_info.process_owner_type = process_info_list[k].process_owner_type
+
+            preprocessed_process_info.process_memory_usage = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / 1024.0
+            preprocessed_process_info.process_memory_usage_rate = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / kTotalMemorySize
+
+            preprocessed_process_info.process_cpu_usage_rate = 0
+        else:
+            preprocessed_process_info.process_name = process_info_list[k].process_name
+            preprocessed_process_info.process_pid = process_info_list[k].process_pid
+
+        preprocessed_process_info_list.append(preprocessed_process_info)
 
     return preprocessed_process_info_list
 
@@ -441,7 +467,7 @@ def main():
     
     global_init()
 
-    process_manager_update_time = 1
+    process_manager_update_time = 2
 
     prev_process_info_list = get_process_info_list()
     time.sleep(process_manager_update_time)
