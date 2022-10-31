@@ -326,10 +326,6 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
     process_info_list_len = len(process_info_list)
     prev_process_info_list_len = len(prev_process_info_list)
 
-    print(process_info_list_len)
-    print(prev_process_info_list_len)
-    print(len(preprocessed_process_info_list))
-
     while i < process_info_list_len and j < prev_process_info_list_len:
         preprocessed_process_info = PreprocessedProcessInfo()
 
@@ -467,7 +463,7 @@ def main():
     
     global_init()
 
-    process_manager_update_time = 2
+    process_manager_update_time = 1
 
     prev_process_info_list = get_process_info_list()
     time.sleep(process_manager_update_time)
@@ -486,6 +482,7 @@ def main():
             "memory_usage",
             "memory_usage_rate")
         )
+
         for process_info in preprocessed_process_info_list:
             print("%-25.25s\t%-5d\t%-15.15s\t%-14.2f\t%-12.12s\t%-17.2f" % (
                 process_info.process_name, 
