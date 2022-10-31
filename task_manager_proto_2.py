@@ -10,12 +10,11 @@ import win32gui
 import winnt
 import pywintypes
 import ctypes
-from ctypes import GetLastError, wintypes
+from ctypes import wintypes
 from ctypes import windll
 import elevate
 import os
 import time
-import schedule
 import datetime
 from dataclasses import dataclass
 from dataclasses import field
@@ -29,10 +28,10 @@ class ProcessInfo:
     process_owner_type : int = None
     process_time_info_dict : dict = field(default_factory=dict)
     process_memory_info_dict : dict = field(default_factory=dict)
-    process_memory_usage : int = None # 단위 : KB
-    process_cpu_usgae : float = None
+    measurement_time : wintypes.LARGE_INTEGER = wintypes.LARGE_INTEGER()
+    token_flag : bool = False
 
-@dataclass
+@dataclass(order = True)
 class PreprocessedProcessInfo:
     process_name : str = None
     process_pid : int = None
@@ -41,9 +40,102 @@ class PreprocessedProcessInfo:
     process_owner_type : int = None
     process_time_info_dict : dict = field(default_factory=dict)
     process_memory_info_dict : dict = field(default_factory=dict)
-    process_memory_usage : int = None # 단위 : KB
-    process_cpu_usgae : float = None
+    process_memory_usage : float = None # 단위 : KB
+    process_memory_usage_rate : float = None
+    process_cpu_usgae_rate: float = None
     live : bool = False
+
+@dataclass
+class HardSystemMemoryInfo: # 변동되지 않는 메모리 정보
+    kInstall : int = None
+    kHardwareReserved : int = None
+    kTotal : int = None
+
+@dataclass
+class SoftSystemMemoryInfo: # 변동되는 메모리 정보
+    available : int = None
+
+@dataclass
+class SystemMemoryInfo:
+    hard_system_memory_info : HardSystemMemoryInfo = field(default_factory=dataclass)
+    soft_system_memory_info : SoftSystemMemoryInfo = field(default_factory=dataclass)
+
+#DWORD_PTR과 UNLONG_PTR은 32비트인지, 64비트인지의 여부에 따라 크기가 다름. 
+if ctypes.sizeof(ctypes.c_void_p) == ctypes.sizeof(ctypes.c_ulonglong):
+    DWORD_PTR = ctypes.c_ulonglong
+    ULONG_PTR = ctypes.c_ulonglong
+elif ctypes.sizeof(ctypes.c_void_p) == ctypes.sizeof(ctypes.c_ulong):
+    DWORD_PTR = ctypes.c_ulong
+    ULONG_PTR = ctypes.c_ulong
+
+class PROCESSENTRY32(ctypes.Structure):
+    _fields_ = [ ( "dwSize" , wintypes.DWORD) ,
+                 ( "cntUsage" , wintypes.DWORD ),
+                 ( "th32ProcessID" , wintypes.DWORD ),
+                 ( "th32DefaultHeapID" , ULONG_PTR ),
+                 ( "th32ModuleID" , wintypes.DWORD ) ,
+                 ( "cntThreads" , wintypes.DWORD ) ,
+                 ( "th32ParentProcessID" , wintypes.DWORD ) ,
+                 ( "pcPriClassBase" , wintypes.LONG ) ,
+                 ( "dwFlags" , wintypes.DWORD ),
+                 ( "szExeFile" , wintypes.CHAR * 260 ) ]
+
+class PERFORMANCE_INFORMATION(ctypes.Structure):
+    _fields_ = [ ( "cb" , wintypes.DWORD) ,
+                 ( "CommitTotal" , ctypes.c_size_t ),
+                 ( "CommitLimit" , ctypes.c_size_t ),
+                 ( "CommitPeak" , ctypes.c_size_t ),
+                 ( "PhysicalTotal" , ctypes.c_size_t ) ,
+                 ( "PhysicalAvailable" , ctypes.c_size_t ) ,
+                 ( "SystemCache" , ctypes.c_size_t ) ,
+                 ( "KernelTotal" , ctypes.c_size_t ) ,
+                 ( "KernelPaged" , ctypes.c_size_t ),
+                 ( "KernelNonpaged" , ctypes.c_size_t ),
+                 ( "PageSize" , ctypes.c_size_t ),
+                 ( "HandleCount" , wintypes.DWORD ),
+                 ( "ProcessCount" , wintypes.DWORD ),
+                 ( "ThreadCount" , wintypes.DWORD ) ]
+
+class MEMORYSTATUSEX(ctypes.Structure):
+    _fields_ = [ ( "dwLength" , wintypes.DWORD) ,
+                 ( "dwMemoryLoad" , wintypes.DWORD ),
+                 ( "ullTotalPhys" , ctypes.c_uint64 ),
+                 ( "ullAvailPhys" , ctypes.c_uint64 ),
+                 ( "ullTotalPageFile" , ctypes.c_uint64 ) ,
+                 ( "ullAvailPageFile" , ctypes.c_uint64 ) ,
+                 ( "ullTotalVirtual" , ctypes.c_uint64 ) ,
+                 ( "ullAvailVirtual" , ctypes.c_uint64 ) ,
+                 ( "ullAvailExtendedVirtual" , ctypes.c_uint64 ) ]
+
+class SYSTEM_INFO_DUMMYSTRUCT(ctypes.Structure):
+    _fields_ = [("wProcessorArchitecture", ctypes.c_ushort),
+                ("wReserved", ctypes.c_short)]
+
+
+class SYSTEM_INFO_DUMMYUNION(ctypes.Union):
+    _anonymous_ = ("s",)
+    _fields_ = [('dwOemId', ctypes.c_ulong),
+                ('s', SYSTEM_INFO_DUMMYSTRUCT)]
+
+
+class SYSTEM_INFO(ctypes.Structure):
+    _anonymous_ = ("u",)
+    _fields_ = [("u", SYSTEM_INFO_DUMMYUNION),
+                ("dwPageSize", ctypes.c_ulong),
+                ("lpMinimumApplicationAddress", ctypes.c_void_p),
+                ("lpMaximumApplicationAddress", ctypes.c_void_p),
+                ("dwActiveProcessorMask", DWORD_PTR),
+                ("dwNumberOfProcessors", ctypes.c_ulong),
+                ("dwProcessorType", ctypes.c_ulong),
+                ("dwAllocationGranularity", ctypes.c_ulong),
+                ("wProcessorLevel", ctypes.c_ushort),
+                ("wProcessorRevision", ctypes.c_ushort)]
+
+TH32CS_SNAPMODULE = 0x00000002
+INVALID_HANDLE_VALUE = -1
+CP_ACP = 0
+FREQUENCY = wintypes.LARGE_INTEGER()
+NUMBER_OF_PROCESS = 0
 
 def kill_process(process_pid):
     hProc = win32api.OpenProcess(
@@ -61,22 +153,6 @@ def EnumWindowProc(hWnd, lParam):
             win32gui.PostMessage(hWnd, win32con.WM_CLOSE, 0, 0)
         return False
     return True
-
-class PROCESSENTRY32(ctypes.Structure):
-    _fields_ = [ ( "dwSize" , wintypes.DWORD) ,
-                 ( "cntUsage" , wintypes.DWORD ),
-                 ( "th32ProcessID" , wintypes.DWORD ),
-                 ( "th32DefaultHeapID" , ctypes.POINTER((wintypes.ULONG)) ),
-                 ( "th32ModuleID" , wintypes.DWORD ) ,
-                 ( "cntThreads" , wintypes.DWORD ) ,
-                 ( "th32ParentProcessID" , wintypes.DWORD ) ,
-                 ( "pcPriClassBase" , wintypes.LONG ) ,
-                 ( "dwFlags" , wintypes.DWORD ),
-                 ( "szExeFile" , wintypes.CHAR * 260 ) ]
-
-TH32CS_SNAPMODULE = 0x00000002
-INVALID_HANDLE_VALUE = -1
-CP_ACP = 0
 
 def is_admin():
     try:
@@ -104,9 +180,6 @@ def set_privilege(szPrivilege : str):
         return False
 
 
-
-
-
     luid = win32security.LookupPrivilegeValue(None, szPrivilege)
     # LUID LookupPrivilegeValueA(LPCSTR lpSystemName, LPCSTR lpName)
         # Do it
@@ -121,10 +194,6 @@ def set_privilege(szPrivilege : str):
 
     if luid == 0:
         return False
-
-
-
-
 
 
     new_token_privilege = [(luid, win32con.SE_PRIVILEGE_ENABLED)]
@@ -194,9 +263,14 @@ def get_process_info_list() -> list[ProcessInfo] :
             process_info.process_time_info_dict = win32process.GetProcessTimes(hProc)
             process_info.process_memory_info_dict = win32process.GetProcessMemoryInfo(hProc)
 
+            measurement_time = wintypes.LARGE_INTEGER()
+            ctypes.windll.kernel32.QueryPerformanceCounter(ctypes.byref(measurement_time))
+            process_info.measurement_time = measurement_time
+            process_info.token_flag = True
+
             win32api.CloseHandle(hToken)
             win32api.CloseHandle(hProc)
-
+            
         except:
             process_info.process_owner = "Unknown"
 
@@ -208,8 +282,39 @@ def get_process_info_list() -> list[ProcessInfo] :
 
     return process_info_list
 
+def get_hard_system_memory_info() -> HardSystemMemoryInfo:
+    hard_system_memory_info = HardSystemMemoryInfo()
+
+    total_memory_in_kilobytes = ctypes.c_ulonglong()
+    ctypes.windll.kernel32.GetPhysicallyInstalledSystemMemory(ctypes.byref(total_memory_in_kilobytes))
+    hard_system_memory_info.kInstall = total_memory_in_kilobytes.value * 1024
+
+    performance_information = PERFORMANCE_INFORMATION()
+    performance_information.cb = ctypes.sizeof(performance_information)
+    ctypes.windll.psapi.GetPerformanceInfo(ctypes.byref(performance_information), ctypes.sizeof(performance_information))
+    hard_system_memory_info.kTotal = performance_information.PhysicalTotal * performance_information.PageSize
+    hard_system_memory_info.kHardwareReserved = hard_system_memory_info.kInstall - hard_system_memory_info.kTotal
+
+    return hard_system_memory_info
+
+def get_soft_system_memory_info() -> SoftSystemMemoryInfo:
+    soft_system_memory_info = SoftSystemMemoryInfo()
+
+    memory_status_ex = MEMORYSTATUSEX()
+    ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(memory_status_ex))
+    soft_system_memory_info.available = memory_status_ex.ullAvailPhys
+
+    return soft_system_memory_info
+
+def get_system_memory_info() -> SystemMemoryInfo:
+    system_memory_info = SystemMemoryInfo()
+    system_memory_info.hard_system_memory_info = get_hard_system_memory_info()
+    system_memory_info.soft_system_memory_info = get_soft_system_memory_info()
+    
+    return system_memory_info
+
 def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], process_info_list : list[ProcessInfo]) -> list[PreprocessedProcessInfo]:
-    perproceseed_process_info_list = []
+    preprocessed_process_info_list = []
 
     process_info_list.sort()
     prev_process_info_list.sort()
@@ -217,22 +322,126 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
     i = 0
     j = 0
 
-    for i in range(0, process_info_list.len()):
-        perproceseed_process_info = PreprocessedProcessInfo()
+    kTotalMemorySize = get_hard_system_memory_info().kTotal
 
-        if process_info_list[i].process_pid == prev_process_info_list[i].process_pid and process_info_list[i].process_time_info_dict["CreationTime"] == prev_process_info_list[i].process_pid["CreationTime"] :
-            perproceseed_process_info.process_memory_usage = process_info_list[i].process_memory_info_dict["WorkingSetSize"] / 1024.0
+    process_info_list_len = len(process_info_list)
+    prev_process_info_list_len = len(prev_process_info_list)
+    
+    while i < process_info_list_len and j < prev_process_info_list_len:
+        preprocessed_process_info = PreprocessedProcessInfo()
 
-            prev_process_time = prev_process_info_list[i].process_pid["KernelTime"] + prev_process_info_list[i].process_pid["UserTime"]
-            process_time = process_info_list[i].process_pid["KernelTime"] + process_info_list[i].process_pid["UserTime"]
+        if process_info_list[i].token_flag and prev_process_info_list[j].token_flag :
+            if process_info_list[i].process_pid == prev_process_info_list[j].process_pid :
+                if process_info_list[i].process_time_info_dict["CreationTime"] == prev_process_info_list[j].process_time_info_dict["CreationTime"]:
+                    preprocessed_process_info.process_name = process_info_list[i].process_name
+                    preprocessed_process_info.process_pid = process_info_list[i].process_pid
+                    preprocessed_process_info.process_memory_info_dict = process_info_list[i].process_memory_info_dict
+                    preprocessed_process_info.process_time_info_dict = process_info_list[i].process_time_info_dict
+                    preprocessed_process_info.process_owner = process_info_list[i].process_owner
+                    preprocessed_process_info.process_owner_domain = process_info_list[i].process_owner_domain
+                    preprocessed_process_info.process_owner_type = process_info_list[i].process_owner_type
 
-    return None
+                    preprocessed_process_info.process_memory_usage = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / 1024.0
+                    preprocessed_process_info.process_memory_usage_rate = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / kTotalMemorySize
+                    
+                    process_time = process_info_list[i].process_time_info_dict["KernelTime"] + process_info_list[i].process_time_info_dict["UserTime"]
+                    prev_process_time = prev_process_info_list[j].process_time_info_dict["KernelTime"] + prev_process_info_list[j].process_time_info_dict["UserTime"]
+                    elapsed_100nanoseconds = process_info_list[i].measurement_time.value - prev_process_info_list[j].measurement_time.value
+                    elapsed_100nanoseconds *= 100000 # change unit.
+                    elapsed_100nanoseconds /= FREQUENCY.value
+                    preprocessed_process_info.process_cpu_usgae_rate = (process_time - prev_process_time) / (elapsed_100nanoseconds * NUMBER_OF_PROCESS)
 
+                    preprocessed_process_info_list.append(preprocessed_process_info)
+
+                else:
+                    preprocessed_process_info.process_name = process_info_list[i].process_name
+                    preprocessed_process_info.process_pid = process_info_list[i].process_pid
+                    preprocessed_process_info.process_memory_info_dict = process_info_list[i].process_memory_info_dict
+                    preprocessed_process_info.process_time_info_dict = process_info_list[i].process_time_info_dict
+                    preprocessed_process_info.process_owner = process_info_list[i].process_owner
+                    preprocessed_process_info.process_owner_domain = process_info_list[i].process_owner_domain
+                    preprocessed_process_info.process_owner_type = process_info_list[i].process_owner_type
+
+                    preprocessed_process_info.process_memory_usage = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / 1024.0
+                    preprocessed_process_info.process_memory_usage_rate = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / kTotalMemorySize
+
+                    preprocessed_process_info.process_cpu_usgae_rate = 0
+
+                    preprocessed_process_info_list.append(preprocessed_process_info)
+
+            else:
+                if process_info_list[i].process_pid < process_info_list[j].process_pid:  # 새로운 프로세스가 생긴 케이스
+                    while process_info_list[i].process_pid < process_info_list[j].process_pid:
+                        preprocessed_process_info.process_name = process_info_list[i].process_name
+                        preprocessed_process_info.process_pid = process_info_list[i].process_pid
+                        preprocessed_process_info.process_memory_info_dict = process_info_list[i].process_memory_info_dict
+                        preprocessed_process_info.process_time_info_dict = process_info_list[i].process_time_info_dict
+                        preprocessed_process_info.process_owner = process_info_list[i].process_owner
+                        preprocessed_process_info.process_owner_domain = process_info_list[i].process_owner_domain
+                        preprocessed_process_info.process_owner_type = process_info_list[i].process_owner_type
+
+                        preprocessed_process_info.process_memory_usage = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / 1024.0
+                        preprocessed_process_info.process_memory_usage_rate = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / kTotalMemorySize
+
+                        preprocessed_process_info.process_cpu_usgae_rate = 0
+
+                        preprocessed_process_info_list.append(preprocessed_process_info)
+
+                        i += 1
+
+                    continue
+
+                if process_info_list[i].process_pid > process_info_list[j].process_pid:
+                    while process_info_list[i].process_pid > process_info_list[j].process_pid: # 있던 프로세스가 죽은 케이스
+                        j += 1
+
+                    continue
+                
+        else:
+            if process_info_list[i].process_pid == prev_process_info_list[i].process_pid:
+                preprocessed_process_info.process_name = process_info_list[i].process_name
+                preprocessed_process_info.process_pid = process_info_list[i].process_pid
+
+                preprocessed_process_info_list.append(preprocessed_process_info)
+
+            else:
+                if process_info_list[i].process_pid < process_info_list[j].process_pid:  # 새로운 프로세스가 생긴 케이스
+                    while process_info_list[i].process_pid < process_info_list[j].process_pid:
+                        preprocessed_process_info.process_name = process_info_list[i].process_name
+                        preprocessed_process_info.process_pid = process_info_list[i].process_pid
+
+                        preprocessed_process_info_list.append(preprocessed_process_info)
+
+                        i += 1
+
+                    continue
+
+                if process_info_list[i].process_pid > process_info_list[j].process_pid:
+                    while process_info_list[i].process_pid > process_info_list[j].process_pid: # 있던 프로세스가 죽은 케이스
+                        j += 1
+
+                    continue
+
+        i += 1
+        j += 1
+
+    return preprocessed_process_info_list
+
+def global_init() -> None:
+    global NUMBER_OF_PROCESS
+    global FREQUENCY
+    
+    system_info = SYSTEM_INFO()
+    ctypes.windll.kernel32.GetSystemInfo(ctypes.byref(system_info))
+    NUMBER_OF_PROCESS = system_info.dwNumberOfProcessors
+    ctypes.windll.kernel32.QueryPerformanceFrequency(ctypes.byref(FREQUENCY))
 
 def main():
     elevate.elevate(show_console = True)
     if set_privilege(win32con.SE_DEBUG_NAME) == False:
         print("error : can not set privilege")
+    
+    global_init()
 
     process_manager_update_time = 1
 
@@ -243,12 +452,20 @@ def main():
 
         process_info_list = get_process_info_list()
 
-        print("%-25.25s\t%-5s\t%-15.15s\t%-10.10s\t%12.12s" % ("name", "pid", "owner", "cpu_usage", "memory_usage"))
-        for process_info in process_info_list:
-            print("%-25.25s\t%-5d\t%- 15.15s\t%-10.10s\t%12.12s" % (process_info.process_name, process_info.process_pid, process_info.process_owner, "", (str(process_info.process_memory_usage) + " " + "K")))
+        preprocessed_process_info_list = preprocessing_process_info(prev_process_info_list, process_info_list)
+
+        print("%-25.25s\t%-5s\t%-15.15s\t%-14.14s\t%12.12s" % ("name", "pid", "owner", "cpu_usage_rate", "memory_usage"))
+        for process_info in preprocessed_process_info_list:
+            print("%-25.25s\t%-5d\t%- 15.15s\t%-14.14s\t%12.12s" % (
+                    process_info.process_name,
+                    process_info.process_pid,
+                    process_info.process_owner,
+                    process_info.process_cpu_usgae_rate,
+                    (str(process_info.process_memory_usage) + " " + "K"))
+            )
+
 
         prev_process_info_list = process_info_list
-
         time.sleep(process_manager_update_time)
         break
 
