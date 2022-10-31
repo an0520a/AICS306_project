@@ -40,10 +40,9 @@ class PreprocessedProcessInfo:
     process_owner_type : int = None
     process_time_info_dict : dict = field(default_factory=dict)
     process_memory_info_dict : dict = field(default_factory=dict)
-    process_memory_usage : float = None # 단위 : KB
-    process_memory_usage_rate : float = None
-    process_cpu_usgae_rate: float = None
-    live : bool = False
+    process_cpu_usage_rate: float = 0
+    process_memory_usage : float = 0 # 단위 : KB
+    process_memory_usage_rate : float = 0
 
 @dataclass
 class HardSystemMemoryInfo: # 변동되지 않는 메모리 정보
@@ -342,15 +341,14 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
                     preprocessed_process_info.process_owner_type = process_info_list[i].process_owner_type
 
                     preprocessed_process_info.process_memory_usage = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / 1024.0
-                    preprocessed_process_info.process_memory_usage_rate = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / kTotalMemorySize
+                    preprocessed_process_info.process_memory_usage_rate = (100 * preprocessed_process_info.process_memory_info_dict["WorkingSetSize"]) / kTotalMemorySize
                     
                     process_time = process_info_list[i].process_time_info_dict["KernelTime"] + process_info_list[i].process_time_info_dict["UserTime"]
                     prev_process_time = prev_process_info_list[j].process_time_info_dict["KernelTime"] + prev_process_info_list[j].process_time_info_dict["UserTime"]
                     elapsed_100nanoseconds = process_info_list[i].measurement_time.value - prev_process_info_list[j].measurement_time.value
                     elapsed_100nanoseconds *= 100000 # change unit.
                     elapsed_100nanoseconds /= FREQUENCY.value
-                    preprocessed_process_info.process_cpu_usgae_rate = (process_time - prev_process_time) / (elapsed_100nanoseconds * NUMBER_OF_PROCESS)
-
+                    preprocessed_process_info.process_cpu_usage_rate = (process_time - prev_process_time) / (elapsed_100nanoseconds * NUMBER_OF_PROCESS)
                     preprocessed_process_info_list.append(preprocessed_process_info)
 
                 else:
@@ -365,7 +363,7 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
                     preprocessed_process_info.process_memory_usage = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / 1024.0
                     preprocessed_process_info.process_memory_usage_rate = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / kTotalMemorySize
 
-                    preprocessed_process_info.process_cpu_usgae_rate = 0
+                    preprocessed_process_info.process_cpu_usage_rate = 0
 
                     preprocessed_process_info_list.append(preprocessed_process_info)
 
@@ -383,7 +381,7 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
                         preprocessed_process_info.process_memory_usage = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / 1024.0
                         preprocessed_process_info.process_memory_usage_rate = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / kTotalMemorySize
 
-                        preprocessed_process_info.process_cpu_usgae_rate = 0
+                        preprocessed_process_info.process_cpu_usage_rate = 0
 
                         preprocessed_process_info_list.append(preprocessed_process_info)
 
@@ -454,14 +452,22 @@ def main():
 
         preprocessed_process_info_list = preprocessing_process_info(prev_process_info_list, process_info_list)
 
-        print("%-25.25s\t%-5s\t%-15.15s\t%-14.14s\t%12.12s" % ("name", "pid", "owner", "cpu_usage_rate", "memory_usage"))
+        print("%-25.25s\t%-5s\t%-15.15s\t%-14.14s\t%-12.12s\t%-17.17s" % (
+            "name", 
+            "pid", 
+            "owner", 
+            "cpu_usage_rate", 
+            "memory_usage",
+            "memory_usage_rate")
+        )
         for process_info in preprocessed_process_info_list:
-            print("%-25.25s\t%-5d\t%- 15.15s\t%-14.14s\t%12.12s" % (
-                    process_info.process_name,
-                    process_info.process_pid,
-                    process_info.process_owner,
-                    process_info.process_cpu_usgae_rate,
-                    (str(process_info.process_memory_usage) + " " + "K"))
+            print("%-25.25s\t%-5d\t%-15.15s\t%-14.2f\t%-12.12s\t%-17.2f" % (
+                process_info.process_name, 
+                process_info.process_pid, 
+                process_info.process_owner, 
+                process_info.process_cpu_usage_rate, 
+                (str(process_info.process_memory_usage) + " " + "K"),
+                process_info.process_memory_usage_rate)
             )
 
 
