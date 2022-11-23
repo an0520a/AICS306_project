@@ -22,26 +22,21 @@ from dataclasses import field
 @dataclass(order = True)
 class ProcessInfo:
     process_pid : int = None
-    process_name : str = None
-    process_owner : str = None
-    process_owner_domain : str = None
+    process_name : str = ""
+    process_path : str = ""
+    process_owner : str = ""
+    process_owner_domain : str = ""
     process_owner_type : int = None
+    process_path : str = ""
     process_time_info_dict : dict = field(default_factory=dict)
     process_memory_info_dict : dict = field(default_factory=dict)
     measurement_time : wintypes.LARGE_INTEGER = wintypes.LARGE_INTEGER()
     token_flag : bool = False
 
 @dataclass(order = True)
-class PreprocessedProcessInfo:
-    process_name : str = None
-    process_pid : int = None
-    process_owner : str = None
-    process_owner_domain : str = None
-    process_owner_type : int = None
-    process_time_info_dict : dict = field(default_factory=dict)
-    process_memory_info_dict : dict = field(default_factory=dict)
-    process_cpu_usage_rate: float = 0
+class PreprocessedProcessInfo(ProcessInfo):
     process_memory_usage : float = 0 # 단위 : KB
+    process_cpu_usage_rate: float = 0
     process_memory_usage_rate : float = 0
 
 @dataclass
@@ -239,7 +234,7 @@ def get_process_info_list() -> list[ProcessInfo] :
 
     while flag:
         process_info = ProcessInfo()
-        process_info.process_name = process_entry_32.szExeFile.decode("utf8")
+        process_info.process_name = process_entry_32.szExeFile.decode("UTF-8")
         process_info.process_pid = process_entry_32.th32ProcessID
         
         try:
@@ -259,6 +254,12 @@ def get_process_info_list() -> list[ProcessInfo] :
                 None, token_user
             )
 
+            exe_name_size = wintypes.DWORD(win32con.MAX_PATH)
+            exe_name = (wintypes.CHAR * exe_name_size.value)()
+            ctypes.windll.kernel32.QueryFullProcessImageNameA(hProc.__int__(), 0, ctypes.byref(exe_name), ctypes.byref(exe_name_size))
+
+            process_info.process_path = str(exe_name.value.decode("UTF-8"))
+
             process_info.process_time_info_dict = win32process.GetProcessTimes(hProc)
             process_info.process_memory_info_dict = win32process.GetProcessMemoryInfo(hProc)
 
@@ -270,7 +271,7 @@ def get_process_info_list() -> list[ProcessInfo] :
             win32api.CloseHandle(hToken)
             win32api.CloseHandle(hProc)
             
-        except:
+        except Exception as e:\
             process_info.process_owner = "Unknown"
 
         process_info_list.append(process_info)
@@ -326,19 +327,24 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
     process_info_list_len = len(process_info_list)
     prev_process_info_list_len = len(prev_process_info_list)
 
+    def process_info_list_to_pre_processed_process_info(_preprocessed_process_info : PreprocessedProcessInfo, _process_info :ProcessInfo):
+        _preprocessed_process_info.process_name = _process_info.process_name
+        _preprocessed_process_info.process_pid = _process_info.process_pid
+        _preprocessed_process_info.process_path = _process_info.process_path
+        _preprocessed_process_info.measurement_time = _process_info.measurement_time
+        _preprocessed_process_info.process_memory_info_dict = _process_info.process_memory_info_dict
+        _preprocessed_process_info.process_time_info_dict = _process_info.process_time_info_dict
+        _preprocessed_process_info.process_owner = _process_info.process_owner
+        _preprocessed_process_info.process_owner_domain = _process_info.process_owner_domain
+        _preprocessed_process_info.process_owner_type = _process_info.process_owner_type
+
     while i < process_info_list_len and j < prev_process_info_list_len:
         preprocessed_process_info = PreprocessedProcessInfo()
 
         if process_info_list[i].token_flag and prev_process_info_list[j].token_flag :
             if process_info_list[i].process_pid == prev_process_info_list[j].process_pid :
                 if process_info_list[i].process_time_info_dict["CreationTime"] == prev_process_info_list[j].process_time_info_dict["CreationTime"]:
-                    preprocessed_process_info.process_name = process_info_list[i].process_name
-                    preprocessed_process_info.process_pid = process_info_list[i].process_pid
-                    preprocessed_process_info.process_memory_info_dict = process_info_list[i].process_memory_info_dict
-                    preprocessed_process_info.process_time_info_dict = process_info_list[i].process_time_info_dict
-                    preprocessed_process_info.process_owner = process_info_list[i].process_owner
-                    preprocessed_process_info.process_owner_domain = process_info_list[i].process_owner_domain
-                    preprocessed_process_info.process_owner_type = process_info_list[i].process_owner_type
+                    process_info_list_to_pre_processed_process_info(preprocessed_process_info, process_info_list[i])
 
                     preprocessed_process_info.process_memory_usage = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / 1024.0
                     preprocessed_process_info.process_memory_usage_rate = (100 * preprocessed_process_info.process_memory_info_dict["WorkingSetSize"]) / kTotalMemorySize
@@ -351,14 +357,8 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
                     preprocessed_process_info.process_cpu_usage_rate = (process_time - prev_process_time) / (elapsed_100nanoseconds * NUMBER_OF_PROCESS)
                     preprocessed_process_info_list.append(preprocessed_process_info)
 
-                else:
-                    preprocessed_process_info.process_name = process_info_list[i].process_name
-                    preprocessed_process_info.process_pid = process_info_list[i].process_pid
-                    preprocessed_process_info.process_memory_info_dict = process_info_list[i].process_memory_info_dict
-                    preprocessed_process_info.process_time_info_dict = process_info_list[i].process_time_info_dict
-                    preprocessed_process_info.process_owner = process_info_list[i].process_owner
-                    preprocessed_process_info.process_owner_domain = process_info_list[i].process_owner_domain
-                    preprocessed_process_info.process_owner_type = process_info_list[i].process_owner_type
+                else: # 새로운 프로세스가 생긴 케이스 (기존 프로세스와 pid가 같음)
+                    process_info_list_to_pre_processed_process_info(preprocessed_process_info, process_info_list[i])
 
                     preprocessed_process_info.process_memory_usage = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / 1024.0
                     preprocessed_process_info.process_memory_usage_rate = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / kTotalMemorySize
@@ -368,15 +368,9 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
                     preprocessed_process_info_list.append(preprocessed_process_info)
 
             else:
-                if process_info_list[i].process_pid < prev_process_info_list[j].process_pid:  # 새로운 프로세스가 생긴 케이스
+                if process_info_list[i].process_pid < prev_process_info_list[j].process_pid:  # 새로운 프로세스가 생긴 케이스 (기존 프로세스와 pid가 다름)
                     while process_info_list[i].process_pid < prev_process_info_list[j].process_pid:
-                        preprocessed_process_info.process_name = process_info_list[i].process_name
-                        preprocessed_process_info.process_pid = process_info_list[i].process_pid
-                        preprocessed_process_info.process_memory_info_dict = process_info_list[i].process_memory_info_dict
-                        preprocessed_process_info.process_time_info_dict = process_info_list[i].process_time_info_dict
-                        preprocessed_process_info.process_owner = process_info_list[i].process_owner
-                        preprocessed_process_info.process_owner_domain = process_info_list[i].process_owner_domain
-                        preprocessed_process_info.process_owner_type = process_info_list[i].process_owner_type
+                        process_info_list_to_pre_processed_process_info(preprocessed_process_info, process_info_list[i])
 
                         preprocessed_process_info.process_memory_usage = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / 1024.0
                         preprocessed_process_info.process_memory_usage_rate = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / kTotalMemorySize
@@ -399,6 +393,7 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
             if process_info_list[i].process_pid == prev_process_info_list[i].process_pid:
                 preprocessed_process_info.process_name = process_info_list[i].process_name
                 preprocessed_process_info.process_pid = process_info_list[i].process_pid
+                preprocessed_process_info.measurement_time = process_info_list[i].measurement_time
 
                 preprocessed_process_info_list.append(preprocessed_process_info)
 
@@ -407,6 +402,7 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
                     while process_info_list[i].process_pid < prev_process_info_list[j].process_pid:
                         preprocessed_process_info.process_name = process_info_list[i].process_name
                         preprocessed_process_info.process_pid = process_info_list[i].process_pid
+                        preprocessed_process_info.measurement_time = process_info_list[i].measurement_time
 
                         preprocessed_process_info_list.append(preprocessed_process_info)
 
