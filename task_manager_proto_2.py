@@ -231,18 +231,20 @@ def get_process_info_list() -> list[ProcessInfo] :
     process_entry_32.dwSize = ctypes.sizeof(process_entry_32)
 
     flag = windll.kernel32.Process32First(hProcessSnapshot, ctypes.pointer(process_entry_32))
+    flag = windll.kernel32.Process32Next(hProcessSnapshot, ctypes.pointer(process_entry_32))
+    # need to pass pid 0
 
     while flag:
         process_info = ProcessInfo()
         process_info.process_name = process_entry_32.szExeFile.decode("UTF-8")
         process_info.process_pid = process_entry_32.th32ProcessID
         
-        try:
-            hProc = win32api.OpenProcess(
-                win32con.PROCESS_QUERY_LIMITED_INFORMATION, win32con.FALSE,
-                process_info.process_pid
-            )
+        hProc = win32api.OpenProcess(
+            win32con.PROCESS_QUERY_LIMITED_INFORMATION, win32con.FALSE,
+            process_info.process_pid
+        )
 
+        try:
             hToken = win32security.OpenProcessToken(
                 hProc,
                 win32con.TOKEN_QUERY
@@ -253,26 +255,25 @@ def get_process_info_list() -> list[ProcessInfo] :
                 win32security.LookupAccountSid(
                 None, token_user
             )
-
-            exe_name_size = wintypes.DWORD(win32con.MAX_PATH)
-            exe_name = (wintypes.CHAR * exe_name_size.value)()
-            ctypes.windll.kernel32.QueryFullProcessImageNameA(hProc.__int__(), 0, ctypes.byref(exe_name), ctypes.byref(exe_name_size))
-
-            process_info.process_path = str(exe_name.value.decode("UTF-8"))
-
-            process_info.process_time_info_dict = win32process.GetProcessTimes(hProc)
-            process_info.process_memory_info_dict = win32process.GetProcessMemoryInfo(hProc)
-
-            measurement_time = wintypes.LARGE_INTEGER()
-            ctypes.windll.kernel32.QueryPerformanceCounter(ctypes.byref(measurement_time))
-            process_info.measurement_time = measurement_time
-            process_info.token_flag = True
-
             win32api.CloseHandle(hToken)
-            win32api.CloseHandle(hProc)
-            
-        except Exception as e:\
-            process_info.process_owner = "Unknown"
+        except:
+            process_info.process_owner = "SYSTEM"
+
+        exe_name_size = wintypes.DWORD(win32con.MAX_PATH)
+        exe_name = (wintypes.CHAR * exe_name_size.value)()
+        ctypes.windll.kernel32.QueryFullProcessImageNameA(hProc.__int__(), 0, ctypes.byref(exe_name), ctypes.byref(exe_name_size))
+
+        process_info.process_path = str(exe_name.value.decode("UTF-8"))
+
+        process_info.process_time_info_dict = win32process.GetProcessTimes(hProc)
+        process_info.process_memory_info_dict = win32process.GetProcessMemoryInfo(hProc)
+
+        measurement_time = wintypes.LARGE_INTEGER()
+        ctypes.windll.kernel32.QueryPerformanceCounter(ctypes.byref(measurement_time))
+        process_info.measurement_time = measurement_time
+        process_info.token_flag = True
+
+        win32api.CloseHandle(hProc)
 
         process_info_list.append(process_info)
         flag = windll.kernel32.Process32Next(hProcessSnapshot, ctypes.pointer(process_entry_32))
