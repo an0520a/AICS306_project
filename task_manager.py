@@ -16,6 +16,7 @@ import elevate
 import os
 import time
 import datetime
+import pydivert
 from dataclasses import dataclass
 from dataclasses import field
 
@@ -452,6 +453,9 @@ def global_init() -> None:
     ctypes.windll.kernel32.GetSystemInfo(ctypes.byref(system_info))
     NUMBER_OF_PROCESS = system_info.dwNumberOfProcessors
     ctypes.windll.kernel32.QueryPerformanceFrequency(ctypes.byref(FREQUENCY))
+
+def process_packet_capture(process_id : int):
+        windivert_handle = pydivert.WinDivert()
 
 def main():
     elevate.elevate(show_console = True)
