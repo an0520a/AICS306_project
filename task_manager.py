@@ -16,7 +16,6 @@ import elevate
 import os
 import time
 import datetime
-import pydivert
 from dataclasses import dataclass
 from dataclasses import field
 
@@ -55,6 +54,11 @@ class SystemMemoryInfo:
     hard_system_memory_info : HardSystemMemoryInfo = field(default_factory=dataclass)
     soft_system_memory_info : SoftSystemMemoryInfo = field(default_factory=dataclass)
 
+@dataclass(order = True)
+class InterfaceInfo:
+    name : str = ""
+    description : str = ""
+
 #DWORD_PTR과 UNLONG_PTR은 32비트인지, 64비트인지의 여부에 따라 크기가 다름. 
 if ctypes.sizeof(ctypes.c_void_p) == ctypes.sizeof(ctypes.c_ulonglong):
     DWORD_PTR = ctypes.c_ulonglong
@@ -62,6 +66,10 @@ if ctypes.sizeof(ctypes.c_void_p) == ctypes.sizeof(ctypes.c_ulonglong):
 elif ctypes.sizeof(ctypes.c_void_p) == ctypes.sizeof(ctypes.c_ulong):
     DWORD_PTR = ctypes.c_ulong
     ULONG_PTR = ctypes.c_ulong
+
+TH32CS_SNAPMODULE = 0x00000002
+INVALID_HANDLE_VALUE = -1
+CP_ACP = 0
 
 class PROCESSENTRY32(ctypes.Structure):
     _fields_ = [ ( "dwSize" , wintypes.DWORD) ,
@@ -126,11 +134,39 @@ class SYSTEM_INFO(ctypes.Structure):
                 ("wProcessorLevel", ctypes.c_ushort),
                 ("wProcessorRevision", ctypes.c_ushort)]
 
-TH32CS_SNAPMODULE = 0x00000002
-INVALID_HANDLE_VALUE = -1
-CP_ACP = 0
 FREQUENCY = wintypes.LARGE_INTEGER()
 NUMBER_OF_PROCESS = 0
+
+#define PCAP_ERRBUF_SIZE 256
+PCAP_ERRBUF_SIZE = 256
+
+#define PCAP_SRC_IF_STRING "rpcap://"
+PCAP_SRC_IF_STRING = ctypes.c_char_p(b"rpcap://")
+
+bpf_u_int32 = ctypes.c_uint
+
+class sockaddr(ctypes.Structure):
+    _fields_ = [("sa_family", wintypes.USHORT),
+                ("sa_data", ctypes.c_char * 14)]
+
+class pcap_addr(ctypes.Structure):
+    pass
+pcap_addr._fields_ = [("next", ctypes.POINTER(pcap_addr)),
+                      ("addr", ctypes.POINTER(sockaddr)),
+                      ("netmask", ctypes.POINTER(sockaddr)),
+                      ("broadaddr", ctypes.POINTER(sockaddr)),
+                      ("dstaddr", ctypes.POINTER(sockaddr))]
+
+class pcap_if_t(ctypes.Structure):
+    pass
+pcap_if_t._fields_ = [("next", ctypes.POINTER(pcap_if_t)),
+                      ("name", ctypes.c_char_p),
+                      ("description", ctypes.c_char_p),
+                      ("addresses", ctypes.POINTER(pcap_addr)),
+                      ("flags", bpf_u_int32)]
+pcap_if = pcap_if_t
+
+
 
 def kill_process(process_pid):
     hProc = win32api.OpenProcess(
@@ -231,9 +267,13 @@ def get_process_info_list() -> list[ProcessInfo] :
     process_entry_32 = PROCESSENTRY32()
     process_entry_32.dwSize = ctypes.sizeof(process_entry_32)
 
-    flag = windll.kernel32.Process32First(hProcessSnapshot, ctypes.pointer(process_entry_32))
-    flag = windll.kernel32.Process32Next(hProcessSnapshot, ctypes.pointer(process_entry_32))
-    # need to pass pid 0
+    if hProcessSnapshot == INVALID_HANDLE_VALUE:
+        print("error_code : {}".format(win32api.GetLastError()))
+        exit()
+
+    flag = windll.kernel32.Process32First(hProcessSnapshot, ctypes.byref(process_entry_32))
+    flag = windll.kernel32.Process32Next(hProcessSnapshot, ctypes.byref(process_entry_32)) # need to pass pid 0
+
 
     while flag:
         process_info = ProcessInfo()
@@ -277,7 +317,7 @@ def get_process_info_list() -> list[ProcessInfo] :
         win32api.CloseHandle(hProc)
 
         process_info_list.append(process_info)
-        flag = windll.kernel32.Process32Next(hProcessSnapshot, ctypes.pointer(process_entry_32))
+        flag = windll.kernel32.Process32Next(hProcessSnapshot, ctypes.byref(process_entry_32))
 
     if hProcessSnapshot != INVALID_HANDLE_VALUE:
         ctypes.windll.kernel32.CloseHandle(hProcessSnapshot)
@@ -454,8 +494,30 @@ def global_init() -> None:
     NUMBER_OF_PROCESS = system_info.dwNumberOfProcessors
     ctypes.windll.kernel32.QueryPerformanceFrequency(ctypes.byref(FREQUENCY))
 
-def process_packet_capture(process_id : int):
-        windivert_handle = pydivert.WinDivert()
+def get_Interface_info_list() -> list[InterfaceInfo]:
+    packetdll = ctypes.CDLL(r"C:\Windows\System32\Npcap\Packet.dll")
+    wpcapdll = ctypes.CDLL(r"C:\Windows\System32\Npcap\wpcap.dll")
+    print(packetdll)
+    error_buf = (ctypes.c_char * PCAP_ERRBUF_SIZE)()
+    interface_info_list : list = []
+
+    all_device_linked_list = ctypes.POINTER(pcap_if_t)()
+    device = ctypes.POINTER(pcap_if_t)()
+
+    print(type(PCAP_SRC_IF_STRING.value))
+
+    if wpcapdll.pcap_findalldevs_ex(PCAP_SRC_IF_STRING, None, ctypes.byref(all_device_linked_list), ctypes.byref(error_buf)) == -1:
+        raise Exception("Error in pcap_findalldevs_ex: ",error_buf.value)
+
+    device = all_device_linked_list
+    while device:
+        device_info = InterfaceInfo()
+        device_info.name = str(device.contents.name.decode("UTF-8"))
+        device_info.description = str(device.contents.description.decode("UTF-8"))
+        interface_info_list.append(device_info)
+        device = device.contents.next
+
+    return interface_info_list
 
 def main():
     elevate.elevate(show_console = True)
@@ -469,8 +531,12 @@ def main():
     prev_process_info_list = get_process_info_list()
     time.sleep(process_manager_update_time)
 
-    while True:
+    # interface_info_list = get_Interface_info_list()
 
+    # for interface_info in interface_info_list:
+    #     print(interface_info.description)
+
+    while True:
         process_info_list = get_process_info_list()
 
         preprocessed_process_info_list = preprocessing_process_info(prev_process_info_list, process_info_list)

@@ -58,15 +58,4 @@ int main()
               << sizeof(addr.Flow) << std::endl
               << sizeof(addr.Flow) << std::endl
               << sizeof(addr.Reserved3) << std::endl;
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
 }

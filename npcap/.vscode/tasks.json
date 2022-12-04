@@ -15,8 +15,9 @@
                 "-luser32",
                 "-lkernel32",
                 "-lcomctl32",
-                "-L.",
-                "-lWinDivert"
+                "-L.\\Lib\\x64",
+                "-lPacket",
+                "-lwpcap"
             ],
             "options": {
                 "cwd": "${fileDirname}"
