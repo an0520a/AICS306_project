@@ -21,6 +21,8 @@ from dataclasses import field
 from npcap_h import *
 from windows_h import *
 import packet_capture
+import multiprocessing as mp
+import signal
 
 @dataclass(order = True)
 class ProcessInfo:
@@ -411,6 +413,19 @@ def get_interface_info_list() -> list[InterfaceInfo]:
 
     return interface_info_list
 
+def start_process_packet_caputre_by_process_name(interface_name : str, process_name : str, pcap_name : str) -> tuple:
+    recv_pipe, send_pipe = mp.Pipe(False)
+    sub_packet_capture_process = mp.Process(name="taskmanager packet manager", target=packet_capture.process_packet_caputre_by_process_name, args=(interface_name, process_name, pcap_name, recv_pipe))
+    sub_packet_capture_process.start()
+    return (sub_packet_capture_process, send_pipe)
+
+def join_process_packet_caputre_by_process_name(process_pipe_tuple : tuple) -> None:
+    process_pipe_tuple[1].send(signal.SIGINT)
+    process_pipe_tuple[1].close()
+    process_pipe_tuple[0].join()
+
+# def end_process_packet_caputre_by_process_name(sub_packet_capture_process : mp.Process) -> None: 
+
 def global_init() -> None:
     global NUMBER_OF_PROCESS
     global FREQUENCY
@@ -454,42 +469,50 @@ def main():
     for interface_info in interface_info_list:
         print(interface_info.description)
 
-    packet_capture.packet_capture(interface_info_list[2].name)
-    # process_manager_update_time = 1
+    time.sleep(1)
 
-    # prev_process_info_list = get_process_info_list()
-    # time.sleep(process_manager_update_time)
+    print("listening start at : {}".format(interface_info_list[8].description))
+    process_pipe_tuple = start_process_packet_caputre_by_process_name(interface_info_list[8].name, "chrome.exe", "tmp.pcap")
 
-    # while True:
-    #     process_info_list = get_process_info_list()
+    # packet_capture.packet_capture(interface_info_list[8].name)
+    process_manager_update_time = 1
 
-    #     preprocessed_process_info_list = preprocessing_process_info(prev_process_info_list, process_info_list)
+    prev_process_info_list = get_process_info_list()
+    time.sleep(process_manager_update_time)
 
-    #     print("%-25.25s\t%-5s\t%-15.15s\t%-14.14s\t%-12.12s\t%-17.17s" % (
-    #         "name", 
-    #         "pid", 
-    #         "owner", 
-    #         "cpu_usage_rate", 
-    #         "memory_usage",
-    #         "memory_usage_rate")
-    #     )
+    while True:
+        process_info_list = get_process_info_list()
 
-    #     for process_info in preprocessed_process_info_list:
-    #         print("%-25.25s\t%-5d\t%-15.15s\t%-14.2f\t%-12.12s\t%-17.2f" % (
-    #             process_info.process_name, 
-    #             process_info.process_pid, 
-    #             process_info.process_owner, 
-    #             process_info.process_cpu_usage_rate, 
-    #             (str(process_info.process_memory_usage) + " " + "K"),
-    #             process_info.process_memory_usage_rate)
-    #         )
+        preprocessed_process_info_list = preprocessing_process_info(prev_process_info_list, process_info_list)
+
+        print("%-25.25s\t%-5s\t%-15.15s\t%-14.14s\t%-12.12s\t%-17.17s" % (
+            "name", 
+            "pid", 
+            "owner", 
+            "cpu_usage_rate", 
+            "memory_usage",
+            "memory_usage_rate")
+        )
+
+        for process_info in preprocessed_process_info_list:
+            print("%-25.25s\t%-5d\t%-15.15s\t%-14.2f\t%-12.12s\t%-17.2f" % (
+                process_info.process_name, 
+                process_info.process_pid, 
+                process_info.process_owner, 
+                process_info.process_cpu_usage_rate, 
+                (str(process_info.process_memory_usage) + " " + "K"),
+                process_info.process_memory_usage_rate)
+            )
 
 
-    #     prev_process_info_list = process_info_list
-    #     time.sleep(process_manager_update_time)
-    #     break
+        prev_process_info_list = process_info_list
+        time.sleep(process_manager_update_time)
+        break
 
-    # os.system("pause")
+    time.sleep(10)
+    join_process_packet_caputre_by_process_name(process_pipe_tuple)
+
+    os.system("pause")
 
 if __name__ == '__main__':
     main()
