@@ -11,10 +11,10 @@
                 "${file}",
                 "-o",
                 "${fileDirname}\\${fileBasenameNoExtension}.exe",
-                "-lgdi32",
                 "-luser32",
                 "-lkernel32",
                 "-lcomctl32",
+                "-lws2_32",
                 "-L.\\Lib\\x64",
                 "-lPacket",
                 "-lwpcap"

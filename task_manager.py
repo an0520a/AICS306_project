@@ -18,6 +18,8 @@ import time
 import datetime
 from dataclasses import dataclass
 from dataclasses import field
+from npcap_h import *
+from windows_h import *
 
 @dataclass(order = True)
 class ProcessInfo:
@@ -59,114 +61,13 @@ class InterfaceInfo:
     name : str = ""
     description : str = ""
 
-#DWORD_PTR과 UNLONG_PTR은 32비트인지, 64비트인지의 여부에 따라 크기가 다름. 
-if ctypes.sizeof(ctypes.c_void_p) == ctypes.sizeof(ctypes.c_ulonglong):
-    DWORD_PTR = ctypes.c_ulonglong
-    ULONG_PTR = ctypes.c_ulonglong
-elif ctypes.sizeof(ctypes.c_void_p) == ctypes.sizeof(ctypes.c_ulong):
-    DWORD_PTR = ctypes.c_ulong
-    ULONG_PTR = ctypes.c_ulong
-
-TH32CS_SNAPMODULE = 0x00000002
-INVALID_HANDLE_VALUE = -1
-CP_ACP = 0
-
-class PROCESSENTRY32(ctypes.Structure):
-    _fields_ = [ ( "dwSize" , wintypes.DWORD) ,
-                 ( "cntUsage" , wintypes.DWORD ),
-                 ( "th32ProcessID" , wintypes.DWORD ),
-                 ( "th32DefaultHeapID" , ULONG_PTR ),
-                 ( "th32ModuleID" , wintypes.DWORD ) ,
-                 ( "cntThreads" , wintypes.DWORD ) ,
-                 ( "th32ParentProcessID" , wintypes.DWORD ) ,
-                 ( "pcPriClassBase" , wintypes.LONG ) ,
-                 ( "dwFlags" , wintypes.DWORD ),
-                 ( "szExeFile" , wintypes.CHAR * 260 ) ]
-
-class PERFORMANCE_INFORMATION(ctypes.Structure):
-    _fields_ = [ ( "cb" , wintypes.DWORD) ,
-                 ( "CommitTotal" , ctypes.c_size_t ),
-                 ( "CommitLimit" , ctypes.c_size_t ),
-                 ( "CommitPeak" , ctypes.c_size_t ),
-                 ( "PhysicalTotal" , ctypes.c_size_t ) ,
-                 ( "PhysicalAvailable" , ctypes.c_size_t ) ,
-                 ( "SystemCache" , ctypes.c_size_t ) ,
-                 ( "KernelTotal" , ctypes.c_size_t ) ,
-                 ( "KernelPaged" , ctypes.c_size_t ),
-                 ( "KernelNonpaged" , ctypes.c_size_t ),
-                 ( "PageSize" , ctypes.c_size_t ),
-                 ( "HandleCount" , wintypes.DWORD ),
-                 ( "ProcessCount" , wintypes.DWORD ),
-                 ( "ThreadCount" , wintypes.DWORD ) ]
-
-class MEMORYSTATUSEX(ctypes.Structure):
-    _fields_ = [ ( "dwLength" , wintypes.DWORD) ,
-                 ( "dwMemoryLoad" , wintypes.DWORD ),
-                 ( "ullTotalPhys" , ctypes.c_uint64 ),
-                 ( "ullAvailPhys" , ctypes.c_uint64 ),
-                 ( "ullTotalPageFile" , ctypes.c_uint64 ) ,
-                 ( "ullAvailPageFile" , ctypes.c_uint64 ) ,
-                 ( "ullTotalVirtual" , ctypes.c_uint64 ) ,
-                 ( "ullAvailVirtual" , ctypes.c_uint64 ) ,
-                 ( "ullAvailExtendedVirtual" , ctypes.c_uint64 ) ]
-
-class SYSTEM_INFO_DUMMYSTRUCT(ctypes.Structure):
-    _fields_ = [("wProcessorArchitecture", ctypes.c_ushort),
-                ("wReserved", ctypes.c_short)]
-
-
-class SYSTEM_INFO_DUMMYUNION(ctypes.Union):
-    _anonymous_ = ("s",)
-    _fields_ = [('dwOemId', ctypes.c_ulong),
-                ('s', SYSTEM_INFO_DUMMYSTRUCT)]
-
-
-class SYSTEM_INFO(ctypes.Structure):
-    _anonymous_ = ("u",)
-    _fields_ = [("u", SYSTEM_INFO_DUMMYUNION),
-                ("dwPageSize", ctypes.c_ulong),
-                ("lpMinimumApplicationAddress", ctypes.c_void_p),
-                ("lpMaximumApplicationAddress", ctypes.c_void_p),
-                ("dwActiveProcessorMask", DWORD_PTR),
-                ("dwNumberOfProcessors", ctypes.c_ulong),
-                ("dwProcessorType", ctypes.c_ulong),
-                ("dwAllocationGranularity", ctypes.c_ulong),
-                ("wProcessorLevel", ctypes.c_ushort),
-                ("wProcessorRevision", ctypes.c_ushort)]
-
 FREQUENCY = wintypes.LARGE_INTEGER()
 NUMBER_OF_PROCESS = 0
-
-#define PCAP_ERRBUF_SIZE 256
-PCAP_ERRBUF_SIZE = 256
-
-#define PCAP_SRC_IF_STRING "rpcap://"
-PCAP_SRC_IF_STRING = ctypes.c_char_p(b"rpcap://")
-
-bpf_u_int32 = ctypes.c_uint
-
-class sockaddr(ctypes.Structure):
-    _fields_ = [("sa_family", wintypes.USHORT),
-                ("sa_data", ctypes.c_char * 14)]
-
-class pcap_addr(ctypes.Structure):
-    pass
-pcap_addr._fields_ = [("next", ctypes.POINTER(pcap_addr)),
-                      ("addr", ctypes.POINTER(sockaddr)),
-                      ("netmask", ctypes.POINTER(sockaddr)),
-                      ("broadaddr", ctypes.POINTER(sockaddr)),
-                      ("dstaddr", ctypes.POINTER(sockaddr))]
-
-class pcap_if_t(ctypes.Structure):
-    pass
-pcap_if_t._fields_ = [("next", ctypes.POINTER(pcap_if_t)),
-                      ("name", ctypes.c_char_p),
-                      ("description", ctypes.c_char_p),
-                      ("addresses", ctypes.POINTER(pcap_addr)),
-                      ("flags", bpf_u_int32)]
-pcap_if = pcap_if_t
-
-
+PACKET_DLL_PATH = r"C:\Windows\System32\Npcap\Packet.dll"
+WPCAP_DLL_PATH = r"C:\Windows\System32\Npcap\wpcap.dll"
+libcdll : ctypes.CDLL
+packetdll : ctypes.CDLL
+wpcapdll : ctypes.CDLL
 
 def kill_process(process_pid):
     hProc = win32api.OpenProcess(
@@ -279,11 +180,13 @@ def get_process_info_list() -> list[ProcessInfo] :
         process_info = ProcessInfo()
         process_info.process_name = process_entry_32.szExeFile.decode("UTF-8")
         process_info.process_pid = process_entry_32.th32ProcessID
-        
-        hProc = win32api.OpenProcess(
-            win32con.PROCESS_QUERY_LIMITED_INFORMATION, win32con.FALSE,
-            process_info.process_pid
-        )
+
+        hProc = ctypes.windll.kernel32.OpenProcess(win32con.PROCESS_QUERY_LIMITED_INFORMATION, win32con.FALSE, process_info.process_pid)
+
+        if hProc == INVALID_HANDLE_VALUE:
+            print("error_code : {}".format(win32api.GetLastError()))
+            raise Exception("2")
+            exit()
 
         try:
             hToken = win32security.OpenProcessToken(
@@ -485,19 +388,7 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
 
     return preprocessed_process_info_list
 
-def global_init() -> None:
-    global NUMBER_OF_PROCESS
-    global FREQUENCY
-    
-    system_info = SYSTEM_INFO()
-    ctypes.windll.kernel32.GetSystemInfo(ctypes.byref(system_info))
-    NUMBER_OF_PROCESS = system_info.dwNumberOfProcessors
-    ctypes.windll.kernel32.QueryPerformanceFrequency(ctypes.byref(FREQUENCY))
-
-def get_Interface_info_list() -> list[InterfaceInfo]:
-    packetdll = ctypes.CDLL(r"C:\Windows\System32\Npcap\Packet.dll")
-    wpcapdll = ctypes.CDLL(r"C:\Windows\System32\Npcap\wpcap.dll")
-    print(packetdll)
+def get_interface_info_list() -> list[InterfaceInfo]:
     error_buf = (ctypes.c_char * PCAP_ERRBUF_SIZE)()
     interface_info_list : list = []
 
@@ -517,55 +408,118 @@ def get_Interface_info_list() -> list[InterfaceInfo]:
         interface_info_list.append(device_info)
         device = device.contents.next
 
+    wpcapdll.pcap_freealldevs(all_device_linked_list)
+
     return interface_info_list
+
+def packet_catpure(interface_info : InterfaceInfo, pcap_file_name : str = "tmp_pcap.pcap"):
+    error_buf = (ctypes.c_char * PCAP_ERRBUF_SIZE)()
+    wpcapdll.pcap_open.restype = ctypes.POINTER(pcap_t)
+    pcap_device_handle = wpcapdll.pcap_open(interface_info.name.encode("UTF-8"), 65536, 0, None, error_buf)
+    pcap_file = ctypes.POINTER(pcap_dumper_t)()
+
+    if pcap_device_handle:
+        pass
+    else:
+        print("Unable to open the adapter. {} is not supported by Npcap\n".format(interface_info.name))
+        print(error_buf.decode("UTF-8"))
+        exit(1)
+
+    print("listening on {}...".format(interface_info.description))
+
+    wpcapdll.pcap_dump_open.restype = ctypes.POINTER(pcap_dumper_t)
+    pcap_file = wpcapdll.pcap_dump_open(pcap_device_handle, pcap_file_name.encode("UTF-8"))
+
+    callback_func_type = ctypes.CFUNCTYPE(None, ctypes.POINTER(ctypes.c_ubyte), ctypes.POINTER(pcap_pkthdr), ctypes.POINTER(ctypes.c_ubyte))
+    callback_func = callback_func_type(py_packet_handler)
+
+    wpcapdll.pcap_loop(pcap_device_handle, 0, callback_func, ctypes.cast(pcap_file, ctypes.POINTER(ctypes.c_ubyte)))
+
+    wpcapdll.pcap_close(pcap_device_handle)
+
+
+def py_packet_handler(dumpfile : ctypes.POINTER(ctypes.c_ubyte), header : ctypes.POINTER(pcap_pkthdr), pkt_data : ctypes.POINTER(ctypes.c_ubyte)):
+    wpcapdll.pcap_dump(dumpfile, header, pkt_data)
+
+def global_init() -> None:
+    global NUMBER_OF_PROCESS
+    global FREQUENCY
+    global packetdll
+    global wpcapdll
+    global libcdll
+
+    packetdll = ctypes.CDLL(PACKET_DLL_PATH)
+    wpcapdll = ctypes.CDLL(WPCAP_DLL_PATH)
+    libcdll = ctypes.CDLL("msvcrt.dll")
+    
+    system_info = SYSTEM_INFO()
+    ctypes.windll.kernel32.GetSystemInfo(ctypes.byref(system_info))
+    NUMBER_OF_PROCESS = system_info.dwNumberOfProcessors
+    ctypes.windll.kernel32.QueryPerformanceFrequency(ctypes.byref(FREQUENCY))
+
+def dependency_check():
+    exit_flag : bool = False
+
+    if os.path.isfile(PACKET_DLL_PATH) == False:
+        print("error : ""The program can't start because Packet.dll is missing from your computer", file=sys.stderr)
+        exit_flag = True
+    
+    if os.path.isfile(WPCAP_DLL_PATH) == False:
+        print("error : ""The program can't start because wpcap.dll is missing from your computer", file=sys.stderr)
+        exit_flag = True
+    
+    if exit_flag:
+        exit(1)
 
 def main():
     elevate.elevate(show_console = True)
     if set_privilege(win32con.SE_DEBUG_NAME) == False:
-        print("error : can not set privilege")
+        print("error : can not set privilege", file=sys.stderr)
     
+    dependency_check()
     global_init()
 
-    process_manager_update_time = 1
+    interface_info_list = get_interface_info_list()
 
-    prev_process_info_list = get_process_info_list()
-    time.sleep(process_manager_update_time)
+    for interface_info in interface_info_list:
+        print(interface_info.description)
 
-    # interface_info_list = get_Interface_info_list()
+    packet_catpure(interface_info_list[2])
+    # process_manager_update_time = 1
 
-    # for interface_info in interface_info_list:
-    #     print(interface_info.description)
+    # prev_process_info_list = get_process_info_list()
+    # time.sleep(process_manager_update_time)
 
-    while True:
-        process_info_list = get_process_info_list()
+    # while True:
+    #     process_info_list = get_process_info_list()
 
-        preprocessed_process_info_list = preprocessing_process_info(prev_process_info_list, process_info_list)
+    #     preprocessed_process_info_list = preprocessing_process_info(prev_process_info_list, process_info_list)
 
-        print("%-25.25s\t%-5s\t%-15.15s\t%-14.14s\t%-12.12s\t%-17.17s" % (
-            "name", 
-            "pid", 
-            "owner", 
-            "cpu_usage_rate", 
-            "memory_usage",
-            "memory_usage_rate")
-        )
+    #     print("%-25.25s\t%-5s\t%-15.15s\t%-14.14s\t%-12.12s\t%-17.17s" % (
+    #         "name", 
+    #         "pid", 
+    #         "owner", 
+    #         "cpu_usage_rate", 
+    #         "memory_usage",
+    #         "memory_usage_rate")
+    #     )
 
-        for process_info in preprocessed_process_info_list:
-            print("%-25.25s\t%-5d\t%-15.15s\t%-14.2f\t%-12.12s\t%-17.2f" % (
-                process_info.process_name, 
-                process_info.process_pid, 
-                process_info.process_owner, 
-                process_info.process_cpu_usage_rate, 
-                (str(process_info.process_memory_usage) + " " + "K"),
-                process_info.process_memory_usage_rate)
-            )
+    #     for process_info in preprocessed_process_info_list:
+    #         print("%-25.25s\t%-5d\t%-15.15s\t%-14.2f\t%-12.12s\t%-17.2f" % (
+    #             process_info.process_name, 
+    #             process_info.process_pid, 
+    #             process_info.process_owner, 
+    #             process_info.process_cpu_usage_rate, 
+    #             (str(process_info.process_memory_usage) + " " + "K"),
+    #             process_info.process_memory_usage_rate)
+    #         )
 
 
-        prev_process_info_list = process_info_list
-        time.sleep(process_manager_update_time)
-        break
+    #     prev_process_info_list = process_info_list
+    #     time.sleep(process_manager_update_time)
+    #     break
 
-    os.system("pause")
+    # os.system("pause")
 
 if __name__ == '__main__':
     main()

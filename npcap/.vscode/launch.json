@@ -6,7 +6,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${fileDirname}/${fileBasenameNoExtension}",
-            "args": [],
+            "args": [ "test_pacp.pcap" ],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],
