@@ -1,6 +1,6 @@
 #include <iostream>
 #include "windivert.h"
-
+#include "winsock2.h"
 int main()
 {
     HANDLE hSocketLayer = WinDivertOpen("true", WINDIVERT_LAYER_FLOW, 0, WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_RECV_ONLY);

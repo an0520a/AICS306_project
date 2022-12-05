@@ -2,6 +2,9 @@ import ctypes
 from ctypes import wintypes
 from windows_h import *
 
+PACKET_DLL_PATH = r"C:\Windows\System32\Npcap\Packet.dll"
+WPCAP_DLL_PATH = r"C:\Windows\System32\Npcap\wpcap.dll"
+
 #define PCAP_ERRBUF_SIZE 256
 PCAP_ERRBUF_SIZE = 256
 

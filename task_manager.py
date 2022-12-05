@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from dataclasses import field
 from npcap_h import *
 from windows_h import *
+import packet_capture
 
 @dataclass(order = True)
 class ProcessInfo:
@@ -63,8 +64,6 @@ class InterfaceInfo:
 
 FREQUENCY = wintypes.LARGE_INTEGER()
 NUMBER_OF_PROCESS = 0
-PACKET_DLL_PATH = r"C:\Windows\System32\Npcap\Packet.dll"
-WPCAP_DLL_PATH = r"C:\Windows\System32\Npcap\wpcap.dll"
 libcdll : ctypes.CDLL
 packetdll : ctypes.CDLL
 wpcapdll : ctypes.CDLL
@@ -412,35 +411,6 @@ def get_interface_info_list() -> list[InterfaceInfo]:
 
     return interface_info_list
 
-def packet_catpure(interface_info : InterfaceInfo, pcap_file_name : str = "tmp_pcap.pcap"):
-    error_buf = (ctypes.c_char * PCAP_ERRBUF_SIZE)()
-    wpcapdll.pcap_open.restype = ctypes.POINTER(pcap_t)
-    pcap_device_handle = wpcapdll.pcap_open(interface_info.name.encode("UTF-8"), 65536, 0, None, error_buf)
-    pcap_file = ctypes.POINTER(pcap_dumper_t)()
-
-    if pcap_device_handle:
-        pass
-    else:
-        print("Unable to open the adapter. {} is not supported by Npcap\n".format(interface_info.name))
-        print(error_buf.decode("UTF-8"))
-        exit(1)
-
-    print("listening on {}...".format(interface_info.description))
-
-    wpcapdll.pcap_dump_open.restype = ctypes.POINTER(pcap_dumper_t)
-    pcap_file = wpcapdll.pcap_dump_open(pcap_device_handle, pcap_file_name.encode("UTF-8"))
-
-    callback_func_type = ctypes.CFUNCTYPE(None, ctypes.POINTER(ctypes.c_ubyte), ctypes.POINTER(pcap_pkthdr), ctypes.POINTER(ctypes.c_ubyte))
-    callback_func = callback_func_type(py_packet_handler)
-
-    wpcapdll.pcap_loop(pcap_device_handle, 0, callback_func, ctypes.cast(pcap_file, ctypes.POINTER(ctypes.c_ubyte)))
-
-    wpcapdll.pcap_close(pcap_device_handle)
-
-
-def py_packet_handler(dumpfile : ctypes.POINTER(ctypes.c_ubyte), header : ctypes.POINTER(pcap_pkthdr), pkt_data : ctypes.POINTER(ctypes.c_ubyte)):
-    wpcapdll.pcap_dump(dumpfile, header, pkt_data)
-
 def global_init() -> None:
     global NUMBER_OF_PROCESS
     global FREQUENCY
@@ -484,7 +454,7 @@ def main():
     for interface_info in interface_info_list:
         print(interface_info.description)
 
-    packet_catpure(interface_info_list[2])
+    packet_capture.packet_capture(interface_info_list[2].name)
     # process_manager_update_time = 1
 
     # prev_process_info_list = get_process_info_list()
