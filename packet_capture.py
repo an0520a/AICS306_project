@@ -362,6 +362,11 @@ def process_packet_caputre_by_process_name(interface_name : str, process_name : 
                             if ip.data.sport in process_port_info_arr[filter_index].udp6 or ip.data.dport in process_port_info_arr[filter_index].udp6:
                                 writer.writepkt(pkt, timestamp)
 
+                input_pcap_file.close()
+                writer_pcap_file.close()
+
+                ctypes.windll.kernel32.DeleteFileA(ctypes.byref(tmp_file))
+
                 return
 
 def packet_capture(interface_name : str, pcap_file_name : str = "tmp_pcap.pcap", send_pipe = None):

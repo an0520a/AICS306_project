@@ -417,6 +417,9 @@ def start_process_packet_caputre_by_process_name(interface_name : str, process_n
     sub_packet_capture_process.start()
     return (sub_packet_capture_process, send_pipe)
 
+# process_packet_caputre_by_process_name을 join 한다.
+# dpkt 부분의 병목으로 상당히 시간이 걸린다.
+# join 되는동안 main 프로세스는 block 된다.
 def join_process_packet_caputre_by_process_name(process_pipe_tuple : tuple) -> None:
     process_pipe_tuple[1].send(signal.SIGINT)
     process_pipe_tuple[1].close()
@@ -508,6 +511,8 @@ def main():
         break
 
     time.sleep(10)
+
+    print("join")
     join_process_packet_caputre_by_process_name(process_pipe_tuple)
 
     # os.system("pause")
