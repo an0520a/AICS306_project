@@ -6,13 +6,15 @@ import win32con
 import win32api
 import numpy as np
 import re
+import dataclasses
 from dataclasses import dataclass
 from dataclasses import field
 from windows_h import *
 from windivert_h import *
-import atexit
 import multiprocessing as mp
 import signal
+import copy
+import dpkt
 
 @dataclass(order=True)
 class ProcessPortInfo:
@@ -155,9 +157,10 @@ def find_local_udp6_ports_by_pid(pid : int) -> set[np.uint16]:
     
     return local_udp_port_list
 
-
+# ip 패킷만 고려
 # 극단적으로 짧게 생성되어 죽는 프로세스에 대해서는 캡처를 할 수 없는 문제가 있음
 # 이유 : pid로 프로세스프로세스 핸들을 통해 프로세스 이름을 얻는데, 이 과정중에 프로세스가 죽으면 프로세스 이름을 얻을 수 없게됨
+# 크롬에서 udp 5353포트 관련 이슈가 있음. udp 5353 포트와 연결 수립 이벤트는 탐지되지 않는데, 연결 삭제 이벤트는 있음
 def process_packet_caputre_by_process_name(interface_name : str, process_name : str, pcap_name : str, recv_pipe):
     windivert_addr = WINDIVERT_ADDRESS()
     process_path_by_pid_buffer = (wintypes.CHAR * win32con.MAX_PATH)()
@@ -211,7 +214,7 @@ def process_packet_caputre_by_process_name(interface_name : str, process_name : 
     process_port_info.udp = find_local_udp_ports_by_pid(init_pid_set)
     process_port_info.tcp6 = find_local_tcp6_ports_by_pid(init_pid_set)
     process_port_info.udp6 = find_local_udp6_ports_by_pid(init_pid_set)
-    process_port_info_arr = np.append(process_port_info_arr, process_port_info)
+    process_port_info_arr = np.append(process_port_info_arr, copy.deepcopy(process_port_info))
 
     # print(process_port_info)
 
@@ -245,7 +248,7 @@ def process_packet_caputre_by_process_name(interface_name : str, process_name : 
         try:
             if process_name_by_pid == process_name:
                 # print("pass")
-                new_process_port_info = process_port_info
+                new_process_port_info = dataclasses.replace(process_port_info)
                 
                 if windivert_addr.Event == WINDIVERT_EVENT_FLOW_ESTABLISHED:
                     if windivert_addr.IPv6:
@@ -271,39 +274,83 @@ def process_packet_caputre_by_process_name(interface_name : str, process_name : 
                             process_port_info.udp.remove(windivert_addr.Flow.LocalPort)
                 
                 process_port_info.timestamp = np.int64(windivert_addr.Timestamp)
-                process_port_info_arr = np.append(process_port_info_arr, [process_port_info])
-                print(process_port_info)
+                process_port_info_arr = np.append(process_port_info_arr, copy.deepcopy(process_port_info))
+                # print(process_port_info)
 
         except Exception as e:
-            print(process_port_info)
-            print(int(windivert_addr.Flow.LocalPort))
-            print("error : ", e)
+            # print(process_port_info)
+            # print(int(windivert_addr.Flow.LocalPort))
+            # print("error : ", e)
             # raise Exception("error")
 
         if recv_pipe.poll():
             if recv_pipe.recv() == signal.SIGINT:
                 recv_pipe.close()
 
+                if windivertdll.WinDivertClose(hFlowLayer) == False:
+                    print("error_code : {}".format(win32api.GetLastError()))
+                # print("end")
+
                 sub_packet_capture_process.kill()
                 sub_packet_capture_process.join()
 
-                # do it
+                first_val : np.int64 = process_port_info_arr[0].timestamp
                 for i in range(0, process_port_info_arr.size):
-                    print(process_port_info_arr[i])
+                    process_port_info_arr[i].timestamp -= first_val
 
-                # print("init val : ", process_port_info_arr[0])
-                # first_val : np.int64 = process_port_info_arr[0].timestamp
-                # # print(process_port_info_arr[0].timestamp)
-                # print(first_val)
+                frequency = wintypes.LARGE_INTEGER()
+                ctypes.windll.kernel32.QueryPerformanceFrequency(ctypes.byref(frequency))
+
+
+                for i in range(0, process_port_info_arr.size):
+                    process_port_info_arr[i].timestamp = np.float64((process_port_info_arr[i].timestamp * 1000000) / np.int64(frequency))
+                    process_port_info_arr[i].timestamp = process_port_info_arr[i].timestamp / np.float64(1000000)
+
+                process_port_info : ProcessPortInfo = copy.deepcopy(process_port_info_arr[len(process_port_info_arr) - 1])
+                process_port_info.timestamp = np.int64(0x0000FFFFFFFFFFFF)
+                process_port_info_arr = np.append(process_port_info_arr, copy.deepcopy(process_port_info))
+
                 # for i in range(0, process_port_info_arr.size):
-                #     process_port_info_arr[i].timestamp -= first_val
+                #     print(process_port_info_arr[i].timestamp)
 
-                # for i in range(0, process_port_info_arr.size):
-                #     print(process_port_info_arr[i])
+                input_pcap_file = open(pcap_name, "rb")
+                writer_pcap_file = open("result.pcap", "wb+")
 
-                if windivertdll.WinDivertClose(hFlowLayer) == False:
-                    print("error_code : {}".format(win32api.GetLastError()))
-                print("end")
+                reader = dpkt.pcap.Reader(input_pcap_file)
+                writer = dpkt.pcap.Writer(writer_pcap_file)
+                first_timestamp = 0
+                filter_index = 0
+
+                for timestamp, pkt in reader:
+                    first_timestamp = timestamp
+                    break
+
+                for timestamp, pkt in reader:
+                    while timestamp > first_timestamp + process_port_info_arr[filter_index + 1].timestamp:
+                        filter_index += 1
+
+                    eth = dpkt.ethernet.Ethernet(pkt)
+
+
+                    if eth.type == dpkt.ethernet.ETH_TYPE_IP:
+                        ip = eth.data
+
+                        if ip.p == dpkt.ip.IP_PROTO_TCP:
+                            if ip.data.sport in process_port_info_arr[filter_index].tcp or ip.data.dport in process_port_info_arr[filter_index].tcp:
+                                writer.writepkt(pkt, timestamp)
+                        elif ip.p == dpkt.ip.IP_PROTO_UDP:
+                            if ip.data.sport in process_port_info_arr[filter_index].udp or ip.data.dport in process_port_info_arr[filter_index].udp:
+                                writer.writepkt(pkt, timestamp)
+
+                    elif eth.type == dpkt.ethernet.ETH_TYPE_IP6:
+                        ip = eth.data
+
+                        if ip.p == dpkt.ip.IP_PROTO_TCP:
+                            if ip.data.sport in process_port_info_arr[filter_index].tcp6 or ip.data.dport in process_port_info_arr[filter_index].tcp6:
+                                writer.writepkt(pkt, timestamp)
+                        elif ip.p == dpkt.ip.IP_PROTO_UDP:
+                            if ip.data.sport in process_port_info_arr[filter_index].udp6 or ip.data.dport in process_port_info_arr[filter_index].udp6:
+                                writer.writepkt(pkt, timestamp)
 
                 return
 
