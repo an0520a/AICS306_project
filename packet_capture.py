@@ -14,7 +14,7 @@ import atexit
 import multiprocessing as mp
 import signal
 
-@dataclass
+@dataclass(order=True)
 class ProcessPortInfo:
     tcp : set[np.uint16] = field(default_factory = set[np.uint16])
     udp : set[np.uint16] = field(default_factory = set[np.uint16])
@@ -164,22 +164,23 @@ def process_packet_caputre_by_process_name(interface_name : str, process_name : 
     process_path_by_pid_size = 0
     process_name_by_pid : str = str()
     process_path_to_name_regex = re.compile(r'\\([^\\]*)$')
-    process_port_info_arr = np.array([ProcessPortInfo])
+    process_port_info = ProcessPortInfo()
+    process_port_info_arr = np.array([  ])
 
-    sub_packet_capture_process_recv_pipe, sub_packet_capture_process_send_pipe = mp.Pipe(False)
-    sub_packet_capture_process = mp.Process(name="taskmanager packet sub catpure", target=packet_capture, args=(interface_name, pcap_name, sub_packet_capture_process_send_pipe))
+    packet_dump_this_conn, packet_dump_child_conn = mp.Pipe(True)
+    sub_packet_capture_process = mp.Process(name="taskmanager packet sub catpure", target=packet_capture, args=(interface_name, pcap_name, packet_dump_child_conn))
     sub_packet_capture_process.start()
 
-    if sub_packet_capture_process_recv_pipe.recv() == "Done":
-        sub_packet_capture_process_recv_pipe.close()
+    if packet_dump_this_conn.recv() == "Done":
+        measurement_time = wintypes.LARGE_INTEGER()
+        ctypes.windll.kernel32.QueryPerformanceCounter(ctypes.byref(measurement_time))
+        process_port_info.timestamp = np.int64(measurement_time)
+        
+        packet_dump_this_conn.send(True)
+        packet_dump_this_conn.close()
     else:
-        raise Exception("sub process error")
+        raise Exception("invalid recv pipe value")
 
-    process_port_info = ProcessPortInfo()
-
-    measurement_time = wintypes.LARGE_INTEGER()
-    ctypes.windll.kernel32.QueryPerformanceCounter(ctypes.byref(measurement_time))
-    process_port_info.timestamp = np.int64(measurement_time)
     hFlowLayer : wintypes.HANDLE = windivertdll.WinDivertOpen(b"true", WINDIVERT_LAYER_FLOW, 0, WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_RECV_ONLY)
 
     if hFlowLayer == INVALID_HANDLE_VALUE:
@@ -212,7 +213,7 @@ def process_packet_caputre_by_process_name(interface_name : str, process_name : 
     process_port_info.udp6 = find_local_udp6_ports_by_pid(init_pid_set)
     process_port_info_arr = np.append(process_port_info_arr, process_port_info)
 
-    print(process_port_info)
+    # print(process_port_info)
 
     while True:
         if windivertdll.WinDivertRecv(hFlowLayer, None, 0, None, ctypes.byref(windivert_addr)) == False:
@@ -239,11 +240,13 @@ def process_packet_caputre_by_process_name(interface_name : str, process_name : 
         if regex_result != None:
             process_name_by_pid = regex_result.group(1)
 
-        print(process_name_by_pid)
+        # print(process_name_by_pid)
 
         try:
             if process_name_by_pid == process_name:
-                print("pass")
+                # print("pass")
+                new_process_port_info = process_port_info
+                
                 if windivert_addr.Event == WINDIVERT_EVENT_FLOW_ESTABLISHED:
                     if windivert_addr.IPv6:
                         if windivert_addr.Flow.Protocol == IPPROTO_TCP:
@@ -268,7 +271,7 @@ def process_packet_caputre_by_process_name(interface_name : str, process_name : 
                             process_port_info.udp.remove(windivert_addr.Flow.LocalPort)
                 
                 process_port_info.timestamp = np.int64(windivert_addr.Timestamp)
-                process_port_info_arr = np.append(process_port_info_arr, process_port_info)
+                process_port_info_arr = np.append(process_port_info_arr, [process_port_info])
                 print(process_port_info)
 
         except Exception as e:
@@ -279,10 +282,24 @@ def process_packet_caputre_by_process_name(interface_name : str, process_name : 
 
         if recv_pipe.poll():
             if recv_pipe.recv() == signal.SIGINT:
+                recv_pipe.close()
+
                 sub_packet_capture_process.kill()
                 sub_packet_capture_process.join()
 
-                recv_pipe.close()
+                # do it
+                for i in range(0, process_port_info_arr.size):
+                    print(process_port_info_arr[i])
+
+                # print("init val : ", process_port_info_arr[0])
+                # first_val : np.int64 = process_port_info_arr[0].timestamp
+                # # print(process_port_info_arr[0].timestamp)
+                # print(first_val)
+                # for i in range(0, process_port_info_arr.size):
+                #     process_port_info_arr[i].timestamp -= first_val
+
+                # for i in range(0, process_port_info_arr.size):
+                #     print(process_port_info_arr[i])
 
                 if windivertdll.WinDivertClose(hFlowLayer) == False:
                     print("error_code : {}".format(win32api.GetLastError()))
@@ -311,6 +328,8 @@ def packet_capture(interface_name : str, pcap_file_name : str = "tmp_pcap.pcap",
 
     if send_pipe:
         send_pipe.send("Done")
+        if send_pipe.recv() != True:
+            raise Exception("invalid recv pipe value")
         send_pipe.close()
 
     wpcapdll.pcap_loop(pcap_device_handle, 0, callback_func, ctypes.cast(pcap_file, ctypes.POINTER(ctypes.c_ubyte)))

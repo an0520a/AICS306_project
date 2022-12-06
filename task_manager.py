@@ -396,8 +396,6 @@ def get_interface_info_list() -> list[InterfaceInfo]:
     all_device_linked_list = ctypes.POINTER(pcap_if_t)()
     device = ctypes.POINTER(pcap_if_t)()
 
-    print(type(PCAP_SRC_IF_STRING.value))
-
     if wpcapdll.pcap_findalldevs_ex(PCAP_SRC_IF_STRING, None, ctypes.byref(all_device_linked_list), ctypes.byref(error_buf)) == -1:
         raise Exception("Error in pcap_findalldevs_ex: ",error_buf.value)
 
@@ -466,12 +464,12 @@ def main():
 
     interface_info_list = get_interface_info_list()
 
-    for interface_info in interface_info_list:
-        print(interface_info.description)
+    for intefrace_number, interface_info in enumerate(interface_info_list):
+        print("{} : {}".format(intefrace_number, interface_info.description))
 
-    time.sleep(1)
+    intefrace_number = int(input("\ninput capture interface number : "))
 
-    print("listening start at : {}".format(interface_info_list[8].description))
+    print("listening start at : {}".format(interface_info_list[intefrace_number].description))
     process_pipe_tuple = start_process_packet_caputre_by_process_name(interface_info_list[8].name, "chrome.exe", "tmp.pcap")
 
     # packet_capture.packet_capture(interface_info_list[8].name)
@@ -512,7 +510,7 @@ def main():
     time.sleep(10)
     join_process_packet_caputre_by_process_name(process_pipe_tuple)
 
-    os.system("pause")
+    # os.system("pause")
 
 if __name__ == '__main__':
     main()
