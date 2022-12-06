@@ -23,6 +23,7 @@ from windows_h import *
 import packet_capture
 import multiprocessing as mp
 import signal
+import copy
 
 @dataclass(order = True)
 class ProcessInfo:
@@ -34,7 +35,7 @@ class ProcessInfo:
     process_owner_type : int = None
     process_path : str = ""
     process_time_info_dict : dict = field(default_factory=dict)
-    process_memory_info_dict : dict = field(default_factory=dict)
+    process_memory_info : PROCESS_MEMORY_COUNTERS = PROCESS_MEMORY_COUNTERS()
     measurement_time : wintypes.LARGE_INTEGER = wintypes.LARGE_INTEGER()
     token_flag : bool = False
 
@@ -210,8 +211,20 @@ def get_process_info_list() -> list[ProcessInfo] :
 
         process_info.process_path = str(exe_name.value.decode("UTF-8"))
 
-        process_info.process_time_info_dict = win32process.GetProcessTimes(hProc)
-        process_info.process_memory_info_dict = win32process.GetProcessMemoryInfo(hProc)
+        
+        # process_info.process_time_info_dict = win32process.GetProcessTimes(hProc)
+        # print(process_info.process_time_info_dict)
+
+        CreationTime = wintypes.LARGE_INTEGER()
+        ExitTime = wintypes.LARGE_INTEGER()
+        KernelTime = wintypes.LARGE_INTEGER()
+        UserTime = wintypes.LARGE_INTEGER()
+
+        windll.kernel32.GetProcessTimes(hProc, ctypes.byref(CreationTime), ctypes.byref(ExitTime), ctypes.byref(KernelTime), ctypes.byref(UserTime))
+        process_info.process_time_info_dict = { "CreationTime" : CreationTime.value, "ExitTime" : ExitTime.value, "KernelTime" : KernelTime.value, "UserTime" : UserTime.value }
+
+        windll.psapi.GetProcessMemoryInfo(hProc, ctypes.byref(process_info.process_memory_info), ctypes.sizeof(process_info.process_memory_info))
+        # process_info.process_memory_info_dict = win32process.GetProcessMemoryInfo(hProc)
 
         measurement_time = wintypes.LARGE_INTEGER()
         ctypes.windll.kernel32.QueryPerformanceCounter(ctypes.byref(measurement_time))
@@ -220,7 +233,7 @@ def get_process_info_list() -> list[ProcessInfo] :
 
         win32api.CloseHandle(hProc)
 
-        process_info_list.append(process_info)
+        process_info_list.append(copy.deepcopy(process_info))
         flag = windll.kernel32.Process32Next(hProcessSnapshot, ctypes.byref(process_entry_32))
 
     if hProcessSnapshot != INVALID_HANDLE_VALUE:
@@ -278,7 +291,7 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
         _preprocessed_process_info.process_pid = _process_info.process_pid
         _preprocessed_process_info.process_path = _process_info.process_path
         _preprocessed_process_info.measurement_time = _process_info.measurement_time
-        _preprocessed_process_info.process_memory_info_dict = _process_info.process_memory_info_dict
+        _preprocessed_process_info.process_memory_info = _process_info.process_memory_info
         _preprocessed_process_info.process_time_info_dict = _process_info.process_time_info_dict
         _preprocessed_process_info.process_owner = _process_info.process_owner
         _preprocessed_process_info.process_owner_domain = _process_info.process_owner_domain
@@ -291,9 +304,9 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
             if process_info_list[i].process_pid == prev_process_info_list[j].process_pid :
                 if process_info_list[i].process_time_info_dict["CreationTime"] == prev_process_info_list[j].process_time_info_dict["CreationTime"]:
                     process_info_list_to_pre_processed_process_info(preprocessed_process_info, process_info_list[i])
-
-                    preprocessed_process_info.process_memory_usage = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / 1024.0
-                    preprocessed_process_info.process_memory_usage_rate = (100 * preprocessed_process_info.process_memory_info_dict["WorkingSetSize"]) / kTotalMemorySize
+                    
+                    preprocessed_process_info.process_memory_usage = preprocessed_process_info.process_memory_info.WorkingSetSize / 1024.0
+                    preprocessed_process_info.process_memory_usage_rate = (100 * preprocessed_process_info.process_memory_info.WorkingSetSize) / kTotalMemorySize
                     
                     process_time = process_info_list[i].process_time_info_dict["KernelTime"] + process_info_list[i].process_time_info_dict["UserTime"]
                     prev_process_time = prev_process_info_list[j].process_time_info_dict["KernelTime"] + prev_process_info_list[j].process_time_info_dict["UserTime"]
@@ -306,8 +319,8 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
                 else: # 새로운 프로세스가 생긴 케이스 (기존 프로세스와 pid가 같음)
                     process_info_list_to_pre_processed_process_info(preprocessed_process_info, process_info_list[i])
 
-                    preprocessed_process_info.process_memory_usage = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / 1024.0
-                    preprocessed_process_info.process_memory_usage_rate = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / kTotalMemorySize
+                    preprocessed_process_info.process_memory_usage = preprocessed_process_info.process_memory_info.WorkingSetSize / 1024.0
+                    preprocessed_process_info.process_memory_usage_rate = (100 * preprocessed_process_info.process_memory_info.WorkingSetSize) / kTotalMemorySize
 
                     preprocessed_process_info.process_cpu_usage_rate = 0
 
@@ -318,8 +331,8 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
                     while process_info_list[i].process_pid < prev_process_info_list[j].process_pid:
                         process_info_list_to_pre_processed_process_info(preprocessed_process_info, process_info_list[i])
 
-                        preprocessed_process_info.process_memory_usage = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / 1024.0
-                        preprocessed_process_info.process_memory_usage_rate = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / kTotalMemorySize
+                        preprocessed_process_info.process_memory_usage = preprocessed_process_info.process_memory_info.WorkingSetSize / 1024.0
+                        preprocessed_process_info.process_memory_usage_rate = (100 * preprocessed_process_info.process_memory_info.WorkingSetSize) / kTotalMemorySize
 
                         preprocessed_process_info.process_cpu_usage_rate = 0
 
@@ -371,14 +384,14 @@ def preprocessing_process_info(prev_process_info_list : list[ProcessInfo], proce
         if process_info_list[k].token_flag:
             preprocessed_process_info.process_name = process_info_list[k].process_name
             preprocessed_process_info.process_pid = process_info_list[k].process_pid
-            preprocessed_process_info.process_memory_info_dict = process_info_list[k].process_memory_info_dict
+            preprocessed_process_info.process_memory_info = process_info_list[k].process_memory_info
             preprocessed_process_info.process_time_info_dict = process_info_list[k].process_time_info_dict
             preprocessed_process_info.process_owner = process_info_list[k].process_owner
             preprocessed_process_info.process_owner_domain = process_info_list[k].process_owner_domain
             preprocessed_process_info.process_owner_type = process_info_list[k].process_owner_type
 
-            preprocessed_process_info.process_memory_usage = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / 1024.0
-            preprocessed_process_info.process_memory_usage_rate = preprocessed_process_info.process_memory_info_dict["WorkingSetSize"] / kTotalMemorySize
+            preprocessed_process_info.process_memory_usage = preprocessed_process_info.process_memory_info.WorkingSetSize / 1024.0
+            preprocessed_process_info.process_memory_usage_rate = (100 * preprocessed_process_info.process_memory_info.WorkingSetSize) / kTotalMemorySize
 
             preprocessed_process_info.process_cpu_usage_rate = 0
         else:
@@ -473,7 +486,7 @@ def main():
     intefrace_number = int(input("\ninput capture interface number : "))
 
     print("listening start at : {}".format(interface_info_list[intefrace_number].description))
-    process_pipe_tuple = start_process_packet_caputre_by_process_name(interface_info_list[8].name, "chrome.exe", "tmp.pcap")
+    process_pipe_tuple = start_process_packet_caputre_by_process_name(interface_info_list[intefrace_number].name, "chrome.exe", "tmp.pcap")
 
     # packet_capture.packet_capture(interface_info_list[8].name)
     process_manager_update_time = 1

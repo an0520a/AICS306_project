@@ -98,6 +98,22 @@ class PERFORMANCE_INFORMATION(ctypes.Structure):
                  ( "ProcessCount" , wintypes.DWORD ),
                  ( "ThreadCount" , wintypes.DWORD ) ]
 
+class FILETIME(ctypes.Structure):
+    _fields_ = [("dwLowDateTime" , wintypes.DWORD),
+                ("dwHighDateTime" , wintypes.DWORD)]
+
+class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
+    _fields_ = [("cb" , wintypes.DWORD),
+                ("PageFaultCount" , wintypes.DWORD),
+                ("PeakWorkingSetSize" , ctypes.c_size_t),
+                ("WorkingSetSize" , ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage" , ctypes.c_size_t),
+                ("QuotaPagedPoolUsage" , ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage" , ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t)]
+
 class MEMORYSTATUSEX(ctypes.Structure):
     _fields_ = [ ( "dwLength" , wintypes.DWORD) ,
                  ( "dwMemoryLoad" , wintypes.DWORD ),
