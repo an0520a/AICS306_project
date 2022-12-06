@@ -278,6 +278,7 @@ def process_packet_caputre_by_process_name(interface_name : str, process_name : 
                 # print(process_port_info)
 
         except Exception as e:
+            pass
             # print(process_port_info)
             # print(int(windivert_addr.Flow.LocalPort))
             # print("error : ", e)
