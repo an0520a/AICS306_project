@@ -204,7 +204,7 @@ def get_process_info_list() -> list[ProcessInfo] :
         except:
             process_info.process_owner = "SYSTEM"
 
-        exe_name_size = wintypes.DWORD(win32con.MAX_PATH)
+        exe_name_size = wintypes.DWORD(win32con.MAX_PATH + 1)
         exe_name = (wintypes.CHAR * exe_name_size.value)()
         ctypes.windll.kernel32.QueryFullProcessImageNameA(hProc.__int__(), 0, ctypes.byref(exe_name), ctypes.byref(exe_name_size))
 

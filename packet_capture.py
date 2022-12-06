@@ -163,15 +163,24 @@ def find_local_udp6_ports_by_pid(pid : int) -> set[np.uint16]:
 # 크롬에서 udp 5353포트 관련 이슈가 있음. udp 5353 포트와 연결 수립 이벤트는 탐지되지 않는데, 연결 삭제 이벤트는 있음
 def process_packet_caputre_by_process_name(interface_name : str, process_name : str, pcap_name : str, recv_pipe):
     windivert_addr = WINDIVERT_ADDRESS()
-    process_path_by_pid_buffer = (wintypes.CHAR * win32con.MAX_PATH)()
+    process_path_by_pid_buffer = (wintypes.CHAR * (win32con.MAX_PATH + 1))()
+    tmp_path = (wintypes.CHAR * (win32con.MAX_PATH + 1))()
+    tmp_path_size = wintypes.DWORD(win32con.MAX_PATH + 1)
+    tmp_file = (wintypes.CHAR * (win32con.MAX_PATH + 1))()
+    tmp_file_size = wintypes.DWORD(win32con.MAX_PATH + 1)
     process_path_by_pid_size = 0
     process_name_by_pid : str = str()
     process_path_to_name_regex = re.compile(r'\\([^\\]*)$')
     process_port_info = ProcessPortInfo()
-    process_port_info_arr = np.array([  ])
+    process_port_info_arr = np.array([])
+
+    if ctypes.windll.kernel32.GetTempPathA(tmp_path_size, ctypes.byref(tmp_path)) == 0:
+        raise Exception("GetTempPathA fail")
+    if ctypes.windll.kernel32.GetTempFileNameA(ctypes.byref(tmp_path), b"pcap", 0, ctypes.byref(tmp_file)) == 0:
+        raise Exception("GetTempFileNameA fail")
 
     packet_dump_this_conn, packet_dump_child_conn = mp.Pipe(True)
-    sub_packet_capture_process = mp.Process(name="taskmanager packet sub catpure", target=packet_capture, args=(interface_name, pcap_name, packet_dump_child_conn))
+    sub_packet_capture_process = mp.Process(name="taskmanager packet sub catpure", target=packet_capture, args=(interface_name, tmp_file.value.decode("UTF-8"), packet_dump_child_conn))
     sub_packet_capture_process.start()
 
     if packet_dump_this_conn.recv() == "Done":
@@ -231,7 +240,7 @@ def process_packet_caputre_by_process_name(interface_name : str, process_name : 
             raise Exception("2")
             exit()
         
-        process_path_size = wintypes.DWORD(win32con.MAX_PATH)
+        process_path_size = wintypes.DWORD(win32con.MAX_PATH + 1)
         if ctypes.windll.kernel32.QueryFullProcessImageNameA(hProc, 0, ctypes.byref(process_path_by_pid_buffer), ctypes.byref(process_path_size)) == False:
             # print("error_code : {}".format(win32api.GetLastError()))
             # raise Exception("3")
@@ -314,8 +323,8 @@ def process_packet_caputre_by_process_name(interface_name : str, process_name : 
                 # for i in range(0, process_port_info_arr.size):
                 #     print(process_port_info_arr[i].timestamp)
 
-                input_pcap_file = open(pcap_name, "rb")
-                writer_pcap_file = open("result.pcap", "wb+")
+                input_pcap_file = open(tmp_file.value.decode("UTF-8"), "rb")
+                writer_pcap_file = open(pcap_name, "wb+")
 
                 reader = dpkt.pcap.Reader(input_pcap_file)
                 writer = dpkt.pcap.Writer(writer_pcap_file)
@@ -365,7 +374,7 @@ def packet_capture(interface_name : str, pcap_file_name : str = "tmp_pcap.pcap",
         pass
     else:
         print("Unable to open the adapter. {} is not supported by Npcap\n".format(interface_name))
-        print(error_buf.decode("UTF-8"))
+        print(error_buf.value.decode("UTF-8"))
         exit(1)
 
     wpcapdll.pcap_dump_open.restype = ctypes.POINTER(pcap_dumper_t)
