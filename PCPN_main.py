@@ -506,6 +506,7 @@ def join_process_packet_caputre_by_process_name(process_pipe_tuple: tuple) -> No
     process_pipe_tuple[1].send(signal.SIGINT)
     process_pipe_tuple[1].close()
     process_pipe_tuple[0].join()
+    ctypes.windll.User32.MessageBoxW(None, "성공적으로 캡처가 완료되었습니다.", "성공", MB_ICONINFORMATION | MB_OK)
 
 
 # def end_process_packet_caputre_by_process_name(sub_packet_capture_process : mp.Process) -> None:
@@ -746,8 +747,8 @@ class second(QDialog, form2_class):
         if hFile == INVALID_HANDLE_VALUE:
             ec = win32api.GetLastError()
             
-            if ec == ERROR_ALREADY_EXISTS:
-                id = ctypes.windll.User32.MessageBoxW(None, "파일이 이미 존재합니다. 덮어쓰겠습니까?", "확인", MB_ICONEXCLAMATION | MB_YESNO)
+            if ec == ERROR_FILE_EXISTS:
+                id = ctypes.windll.User32.MessageBoxW(None, "파일이 이미 존재합니다. 덮어쓰겠습니까?", "확인", MB_ICONWARNING | MB_YESNO)
                 if id != IDYES:
                     return
                 else:
