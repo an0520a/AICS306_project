@@ -731,9 +731,53 @@ class second(QDialog, form2_class):
 
     def capture_start(self):
         process_name = self.textEdit_3.toPlainText()
+        save_path = self.lineEdit.text()
+
+        hFile = ctypes.windll.kernel32.CreateFileW(
+            save_path, 
+            win32con.GENERIC_WRITE, 
+            win32con.FILE_SHARE_WRITE, 
+            None,
+            win32con.CREATE_NEW,
+            win32con.FILE_ATTRIBUTE_NORMAL,
+            None
+        )
+
+        if hFile == INVALID_HANDLE_VALUE:
+            ec = win32api.GetLastError()
+            
+            if ec == ERROR_ALREADY_EXISTS:
+                id = ctypes.windll.User32.MessageBoxW(None, "파일이 이미 존재합니다. 덮어쓰겠습니까?", "확인", MB_ICONEXCLAMATION | MB_YESNO)
+                if id != IDYES:
+                    return
+                else:
+                    hFile = ctypes.windll.kernel32.CreateFileW(
+                        save_path, 
+                        win32con.GENERIC_WRITE, 
+                        win32con.FILE_SHARE_WRITE, 
+                        None,
+                        win32con.CREATE_ALWAYS,
+                        win32con.FILE_ATTRIBUTE_NORMAL,
+                        None
+                    )
+
+                    if hFile == INVALID_HANDLE_VALUE:
+                        ctypes.windll.User32.MessageBoxW(None, "액세스가 거부되었습니다.", "Error", MB_ICONERROR | MB_OK)
+                        return
+            else:
+                ctypes.windll.User32.MessageBoxW(
+                    None, 
+                    "지원되지 않는 경로이거나 액세스가 거부되었습니다.\nerror_code: {}".format(win32api.GetLastError()), 
+                    "Error", 
+                    MB_ICONERROR | MB_OK
+                )
+                return
+
+        ctypes.windll.kernel32.CloseHandle(hFile)
+        ctypes.windll.kernel32.DeleteFileW(save_path)
+
         self.pushButton_4.setEnabled(True)
         self.pushButton_2.setDisabled(True)
-        save_path = self.lineEdit.text()
         self.pushButton_2.setText("Capturing")
 
         self.process_pipe_tuple = start_process_packet_caputre_by_process_name(self.interface_name, process_name, save_path)

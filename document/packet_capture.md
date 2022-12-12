@@ -196,7 +196,7 @@ packet_capture 함수
 ```python
 def packet_capture(
     [in] interface_name : str, 
-    [in] pcap_file_name : str = "tmp_pcap.pcap", 
+    [in, opt] pcap_file_name : str = "tmp_pcap.pcap", 
     [in] send_pipe : multiprocessing.connection.Pipe = None
 ) -> None
 ```
@@ -208,13 +208,13 @@ def packet_capture(
 ```[in] interface_name```  
 패킷을 캡처하고자 하는 네트워크 인터페이스의 이름 입니다.
 <br><br>
-```[in] pcap_file_name```  
+```[in, opt] pcap_file_name```  
 캡처한 패킷을 저장할 pcap 파일 이름입니다.  
 기본값은 "tmp_pcap.pcap" 입니다.
 
 ```[in] send_pipe```  
 process_packet_caputre_by_process_name 함수에서 생성한 프로세스 파이프입니다.
-기본값은 None 입니다.
+기본값은 None 이지만, 적절한 pipe를 넘기지 않을 경우 에러를 발생시킵니다.
 
 <br>
 
