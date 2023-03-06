@@ -38,6 +38,8 @@ Warning
 ---------
 1. IPv6 packets cannot be captured. (I did not have an environment to test with IPv6 and could not debug it.)
 2. It is not guaranteed that all traffic will be captured accurately, and any problems arising from this are the responsibility of the user.
+3. CPU utilization is approximate. It may differ from the actual one.
+4. Memory utilization is calculated based on the working set.
 
 
 <br><br><br><br><br>
@@ -98,4 +100,6 @@ Warning
 ---------
 1. IPv6 패킷은 캡처할 수 없습니다. (IPv6에서 테스트할 수 있는 환경이 없었고, 결국 디버깅을 하지 못했습니다.)
 2. 모든 트래픽이 정확하게 캡처될 수 있다고 보장할 수 없고, 이로 인해 발생한 문제는 사용자에게 있습니다.
+3. cpu 사용률은 근사값입니다. 실제와 다를 수 있습니다.
+4. 메모리 사용률은 working set을 기준으로 계산합니다.
 <br><br>
