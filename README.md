@@ -2,7 +2,50 @@
 
 Introduction
 ------------
-PCPN은 강력한 GUI 프로세스 패킷 캡처 툴입니다.  
+PCPN is a powerful GUI process tcp/udp packet capture tool that supports capturing packets from a specific process based on its name and process ID (TBD). It can be used on Windows 10 64-bit or higher. 
+
+PCPN supports the following features:
+- Packet capture of a process with a specific name
+- Packet capture of a process with a specific PID (TBD)
+- Process list and information
+    - Process name
+    - Process owner
+    - Process PID
+    - Process CPU usage
+    - Process memory usage
+    - Process memory usage rate
+- Process kill
+
+PCPN was created using [npcap](https://npcap.com/) and [WinDivert](https://reqrypt.org/windivert.html) and is licensed under the GPL license.
+
+How to use
+----------
+PCPN requires administrator privileges. If run with normal user privileges, an error will occur and the program will exit. 
+
+If it runs correctly, a window will appear asking you to choose an interface. Select the interface and press the select button to choose the interface to capture packets from.
+
+<img src="document\img\READEME_img_2.png" width="50%">
+
+Finally, you will see a screen where information about various processes is periodically updated. If information such as memory usage rate cannot be obtained for a specific process, CPU usage/memory usage/memory usage rate will be displayed as 0. If necessary, you can sort each column in ascending order by selecting the top of each column. 
+
+Select the process you want to capture on the screen and press the Capture Start button to start capturing packets from the process (or one with the same name). If you want to stop capturing packets, you can do so by pressing the Capture Stop button. The captured packets are saved in pcap file format, and you can specify the path and name using the Save Path. 
+
+You can also use the kill button to end the selected process.
+
+<img src="document\img\READEME_img_3.png" width="70%">
+
+Warning
+---------
+1. IPv6 packets cannot be captured. (I did not have an environment to test with IPv6 and could not debug it.)
+2. It is not guaranteed that all traffic will be captured accurately, and any problems arising from this are the responsibility of the user.
+
+
+<br><br><br><br><br>
+# PCPN(Packet Capture Filtering By Process Name)
+
+Introduction
+------------
+PCPN은 강력한 GUI 프로세스 tcp/udp 패킷 캡처 툴입니다.  
 프로세스 이름과 프로세스 ID(예정)을 통하여 특정 프로세스의 패킷 캡처를 지원합니다.  
 64비트 Windows 10 이나 그 이상 버전의 윈도우에서 사용할 수 있습니다.  
 <br>
@@ -18,7 +61,7 @@ PCPN은 다음 기능을 지원합니다.
     - 프로세스 메모리 사용률 확인
 - 프로세스 킬
 
-[npcap](https://npcap.com/)과 WinDivert(https://reqrypt.org/windivert.html)를 사용하여 만들어졌으며, GPL 라이센스가 적용되었습니다.  
+[npcap](https://npcap.com/)과 [WinDivert](https://reqrypt.org/windivert.html)를 사용하여 만들어졌으며, GPL 라이센스가 적용되었습니다.  
 
 <br>
 <br>
@@ -43,4 +86,10 @@ PCPN은 관리자 권한으로 요구합니다.
 캡처한 패킷은 pcap 파일의 형식으로 저장되며, Save Path를 통해 경로와 이름을 지정할 수 있습니다.  
 또한 프로세스를 선택한 후 kill 버튼을 통하여 해당 프로세스를 종료할 수 있습니다.  
 <img src="document\img\READEME_img_3.png" width="70%">
+<br><br>
+
+Warning
+---------
+1. IPv6 패킷은 캡처할 수 없습니다. (IPv6에서 테스트할 수 있는 환경이 없었고, 결국 디버깅을 하지 못했습니다.)
+2. 모든 트래픽이 정확하게 캡처될 수 있다고 보장할 수 없고, 이로 인해 발생한 문제는 사용자에게 있습니다.
 <br><br>
